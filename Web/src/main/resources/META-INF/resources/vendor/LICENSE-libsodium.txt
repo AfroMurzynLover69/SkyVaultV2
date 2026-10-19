@@ -1,0 +1,5 @@
+﻿libsodium (https://github.com/jedisct1/libsodium.js)
+Copyright (c) 2015-2024 Frank Denis and contributors.
+Licensed under the ISC License.
+Vendored copies: libsodium-sumo.js, libsodium-wrappers-sumo.js (version 0.8.4),
+used locally so the browser does not depend on a CDN.

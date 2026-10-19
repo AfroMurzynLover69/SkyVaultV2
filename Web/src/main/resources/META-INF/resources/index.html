@@ -1,88 +1,341 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SkyVault — panel kontrolny</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyVault</title>
+  <meta name="description" content="SkyVault — prywatna chmura plików z szyfrowaniem Zero-Knowledge.">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/vendor/libsodium-sumo.js"></script>
+  <script defer src="/vendor/libsodium-wrappers-sumo.js"></script>
+  <script defer src="/crypto.js"></script>
+  <script defer src="/app.js"></script>
 </head>
 <body>
 
-<header>
-    <h1>SkyVault</h1>
-    <p class="subtitle">Panel kontrolny serwera</p>
-    <span id="status-dot" class="dot offline" title="Stan połączenia z API"></span>
-</header>
+<!-- ============================ IKONY ============================ -->
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.2 12 4l9 7.2V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-drive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-computers" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-documents" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-images" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/></symbol>
+  <symbol id="i-videos" viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></symbol>
+  <symbol id="i-recent" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.5 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 10l6.1-.9z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.2 7.5l1.9 1.1M17.9 15.4l1.9 1.1M4.2 16.5l1.9-1.1M17.9 8.6l1.9-1.1"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 1-1 1.8"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="i-image-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><circle cx="10.5" cy="12.5" r="1.2"/><path d="m7 18 3-3 2 2 2-2 2 2"/></symbol>
+  <symbol id="i-video-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="m10 11 5 3-5 3z"/></symbol>
+  <symbol id="i-audio-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M10 17v-5l4-1v5"/><circle cx="9" cy="17" r="1"/><circle cx="13" cy="16" r="1"/></symbol>
+  <symbol id="i-archive-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M10 4v2M10 8v2M10 12v2"/></symbol>
+  <symbol id="i-text-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 11h6M9 15h6M9 19h4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m8 10 4 4 4-4"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4H5v16h9"/><path d="M10 12h10M17 9l3 3-3 3"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+</svg>
 
-<main>
+<!-- ============================ EKRAN LOGOWANIA ============================ -->
+<main id="authScreen" class="auth-screen">
+  <section class="auth-art">
+    <div class="auth-art-inner">
+      <div class="brand-lockup">
+        <span class="brand-mark">SV</span>
+        <span class="brand-name">SkyVault</span>
+      </div>
+      <h1>Twoje pliki.<br>Twój klucz.</h1>
+      <p>Zero-Knowledge: hasło i klucz główny nigdy nie opuszczają tej przeglądarki.
+         Serwer przechowuje tylko zaszyfrowane dane, których nie potrafi odczytać.</p>
+      <ul class="auth-points">
+        <li><svg class="icon"><use href="#i-lock"></use></svg><span>AES-GCM 256 na każdym pliku</span></li>
+        <li><svg class="icon"><use href="#i-lock"></use></svg><span>Argon2id — 256 MB pamięci na hasło</span></li>
+        <li><svg class="icon"><use href="#i-lock"></use></svg><span>Nazwy plików też są szyfrowane</span></li>
+      </ul>
+    </div>
+  </section>
 
-    <section class="card">
-        <h2>Współbieżność</h2>
+  <section class="auth-panel">
+    <div class="auth-panel-inner">
+      <div class="auth-switch" role="tablist" aria-label="Tryb">
+        <button type="button" data-auth-mode="login" class="active" role="tab">Logowanie</button>
+        <button type="button" data-auth-mode="register" role="tab">Rejestracja</button>
+      </div>
 
-        <div class="gauge-row">
-            <span id="active-value">—</span>
-            <span class="gauge-sep">/</span>
-            <span id="max-value">—</span>
-            <span class="gauge-label">aktywnych użytkowników</span>
+      <form id="authForm" class="auth-card" novalidate>
+        <h2 id="authTitle">Zaloguj się</h2>
+        <p id="authMessage" class="auth-message" hidden></p>
+
+        <label for="authEmail">Adres e-mail</label>
+        <input id="authEmail" name="email" type="email" maxlength="254"
+               autocomplete="username" spellcheck="false" required>
+
+        <label for="authPassword">Hasło główne</label>
+        <input id="authPassword" name="password" type="password"
+               autocomplete="current-password" required>
+
+        <p id="authHint" class="auth-hint" hidden></p>
+
+        <div class="auth-actions">
+          <button id="authSubmit" type="submit" class="primary">Zaloguj się</button>
         </div>
 
-        <div class="bar">
-            <div id="bar-fill" class="bar-fill"></div>
-        </div>
-
-        <dl class="metrics">
-            <dt>Wolne miejsca</dt><dd id="available-value">—</dd>
-            <dt>Szczyt obciążenia</dt><dd id="peak-value">—</dd>
-            <dt>Odrzucone (429)</dt><dd id="rejected-value">—</dd>
-        </dl>
-    </section>
-
-    <section class="card">
-        <h2>Serwer</h2>
-        <dl class="metrics">
-            <dt>Aplikacja</dt><dd id="app-value">—</dd>
-            <dt>Wersja</dt><dd id="version-value">—</dd>
-            <dt>Java</dt><dd id="java-value">—</dd>
-            <dt>Czas działania</dt><dd id="uptime-value">—</dd>
-        </dl>
-    </section>
-
-    <section class="card wide">
-        <h2>Testy</h2>
-
-        <div class="toolbar">
-            <button id="btn-refresh" type="button">Odśwież</button>
-            <button id="btn-ping" type="button">Wyślij ping</button>
-
-            <label class="field">
-                Opóźnienie
-                <select id="delay-select">
-                    <option value="0">0 ms</option>
-                    <option value="200">200 ms</option>
-                    <option value="500" selected>500 ms</option>
-                    <option value="1000">1 s</option>
-                </select>
-            </label>
-
-            <button id="btn-burst" type="button" class="primary">Test obciążenia</button>
-        </div>
-
-        <p class="hint">
-            „Test obciążenia" wysyła serię równoległych żądań z opóźnieniem ustawionym powyżej.
-            Przeglądarka otwiera do jednego serwera tylko kilka połączeń naraz, więc ten przycisk
-            sprawdza mechanizm, ale nie zapełni limitu 256 miejsc. Do prawdziwego testu
-            współbieżności potrzebny jest skrypt po stronie konsoli.
+        <p class="auth-note">
+          Hasło nigdy nie jest wysyłane. Serwer otrzymuje wyłącznie weryfikator
+          i klucz główny zapakowany kluczem, którego nie zna.
         </p>
-
-        <div id="log" class="log" role="log" aria-live="polite"></div>
-    </section>
-
+      </form>
+    </div>
+  </section>
 </main>
 
-<footer>
-    <span id="footer-info"></span>
-</footer>
+<!-- ============================ APLIKACJA ============================ -->
+<section id="appScreen" class="app-shell" hidden>
+  <header class="topbar">
+    <button class="brand-button" type="button" data-nav="home">
+      <span class="brand-mark small">SV</span>
+      <span class="brand-name">SkyVault</span>
+    </button>
 
-<script src="app.js"></script>
+    <div class="topbar-actions">
+      <button class="icon-button" id="helpButton" type="button" title="Pomoc" aria-label="Pomoc">
+        <svg class="icon"><use href="#i-help"></use></svg>
+      </button>
+      <button class="icon-button" id="settingsButton" type="button" title="Ustawienia" aria-label="Ustawienia">
+        <svg class="icon"><use href="#i-settings"></use></svg>
+      </button>
+      <button class="avatar-button" id="accountButton" type="button" title="Konto" aria-label="Konto">?</button>
+    </div>
+  </header>
+
+  <aside class="sidebar">
+    <nav class="nav-list" aria-label="Sekcje">
+      <p class="nav-heading">Dysk</p>
+      <button class="nav-item" type="button" data-view="home" data-path="">
+        <svg class="icon"><use href="#i-home"></use></svg><span>Strona główna</span>
+      </button>
+      <button class="nav-item" type="button" data-action="root">
+        <svg class="icon"><use href="#i-folder"></use></svg><span>Mój dysk</span>
+      </button>
+      <button class="nav-item" type="button" data-view="computers">
+        <svg class="icon"><use href="#i-computers"></use></svg><span>Komputery</span>
+      </button>
+
+      <p class="nav-heading">Biblioteka</p>
+      <button class="nav-item" type="button" data-view="documents">
+        <svg class="icon"><use href="#i-documents"></use></svg><span>Dokumenty</span>
+      </button>
+      <button class="nav-item" type="button" data-view="images">
+        <svg class="icon"><use href="#i-images"></use></svg><span>Obrazy</span>
+      </button>
+      <button class="nav-item" type="button" data-view="videos">
+        <svg class="icon"><use href="#i-videos"></use></svg><span>Filmy</span>
+      </button>
+      <button class="nav-item" type="button" data-view="music">
+        <svg class="icon"><use href="#i-music"></use></svg><span>Muzyka</span>
+      </button>
+      <button class="nav-item" type="button" data-view="recent">
+        <svg class="icon"><use href="#i-recent"></use></svg><span>Ostatnie</span>
+      </button>
+      <button class="nav-item" type="button" data-view="starred">
+        <svg class="icon"><use href="#i-star"></use></svg><span>Oznaczone gwiazdką</span>
+      </button>
+      <button class="nav-item" type="button" data-view="trash">
+        <svg class="icon"><use href="#i-trash"></use></svg><span>Kosz</span>
+      </button>
+    </nav>
+
+    <div class="storage-summary">
+      <button class="nav-item storage-link" type="button" data-view="storage">
+        <svg class="icon"><use href="#i-storage"></use></svg><span>Skydysk</span>
+      </button>
+      <div class="meter"><span id="sidebarMeter"></span></div>
+      <p id="sidebarUsage">0 B z 0 B</p>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="workspace-top">
+      <h1 id="workspaceTitle">Mój dysk</h1>
+
+      <div id="accountPanel" class="account-menu" hidden>
+        <p class="account-email" id="accountEmail"></p>
+        <p class="account-plan">Plan lokalny</p>
+        <div class="meter"><span id="accountMeter"></span></div>
+        <p class="account-usage" id="accountUsage"></p>
+        <button class="secondary" id="recoveryButton" type="button">
+          <svg class="icon"><use href="#i-lock"></use></svg><span>Karta odzyskiwania</span>
+        </button>
+        <button class="secondary" id="logoutButton" type="button">
+          <svg class="icon"><use href="#i-logout"></use></svg><span>Wyloguj się</span>
+        </button>
+      </div>
+    </header>
+
+    <section id="settingsPanel" class="settings-panel" hidden>
+      <h2>Ustawienia</h2>
+      <div class="settings-grid">
+        <section>
+          <h3>Miejsce na dane</h3>
+          <div class="meter"><span id="settingsMeter"></span></div>
+          <p id="settingsUsage"></p>
+        </section>
+        <section>
+          <h3>Szyfrowanie</h3>
+          <p>AES-GCM 256 · Argon2id · HKDF-SHA256</p>
+          <p class="muted">Klucz główny żyje wyłącznie w pamięci tej karty.</p>
+        </section>
+      </div>
+    </section>
+
+    <div class="location-row">
+      <div class="search-box">
+        <svg class="icon"><use href="#i-search"></use></svg>
+        <input id="searchInput" type="search" placeholder="Szukaj na SkyVault" autocomplete="off">
+      </div>
+      <nav class="breadcrumbs" id="breadcrumbs" aria-label="Ścieżka"></nav>
+    </div>
+
+    <section class="files-panel">
+      <div class="filters" id="filters">
+        <label id="typeFilterLabel">
+          <span>Typ elementu</span>
+          <select id="typeFilter">
+            <option value="all">Wszystkie</option>
+            <option value="folder">Foldery</option>
+            <option value="file">Pliki</option>
+          </select>
+        </label>
+        <label>
+          <span>Sortuj</span>
+          <select id="sortSelect">
+            <option value="name-asc">Nazwa: A–Z</option>
+            <option value="name-desc">Nazwa: Z–A</option>
+            <option value="modified-desc">Data: najnowsze</option>
+            <option value="modified-asc">Data: najstarsze</option>
+            <option value="size-desc">Rozmiar: największe</option>
+            <option value="size-asc">Rozmiar: najmniejsze</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="section-head" id="sectionHead">
+        <div class="file-actions">
+          <span id="fileCount" class="file-count">0 elementów</span>
+          <div class="file-actions-right">
+            <button class="tool-button" id="newFolderButton" type="button" title="Nowy folder">
+              <svg class="icon"><use href="#i-folder"></use></svg>
+            </button>
+            <button class="tool-button" id="uploadButton" type="button" title="Prześlij pliki">
+              <svg class="icon"><use href="#i-upload"></use></svg>
+            </button>
+            <button class="tool-button" id="emptyTrashButton" type="button" title="Opróżnij kosz" hidden>
+              <svg class="icon"><use href="#i-trash"></use></svg>
+            </button>
+            <div class="view-switch" role="group" aria-label="Widok">
+              <button class="view-button active" type="button" data-view-mode="list" title="Lista">
+                <svg class="icon"><use href="#i-list"></use></svg>
+              </button>
+              <button class="view-button" type="button" data-view-mode="grid" title="Ikony">
+                <svg class="icon"><use href="#i-grid"></use></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="filesSurface" class="files-surface" data-view-mode="list"></div>
+
+      <section id="storageView" class="storage-view" hidden></section>
+      <section id="computersView" class="computers-view" hidden></section>
+    </section>
+  </main>
+</section>
+
+<input id="fileInput" type="file" multiple hidden>
+<input id="folderInput" type="file" webkitdirectory directory multiple hidden>
+
+<!-- ============================ POSTĘP UPLOADU ============================ -->
+<aside id="uploadToast" class="upload-toast" hidden aria-live="polite">
+  <div class="upload-head">
+    <strong id="uploadTitle">Przesyłanie</strong>
+    <button class="icon-button" id="uploadClose" type="button" aria-label="Zamknij">
+      <svg class="icon"><use href="#i-close"></use></svg>
+    </button>
+  </div>
+  <p id="uploadSubtitle" class="upload-subtitle"></p>
+  <div class="meter"><span id="uploadMeter"></span></div>
+  <div id="uploadQueue" class="upload-queue"></div>
+</aside>
+
+<!-- ============================ MENU KONTEKSTOWE ============================ -->
+<div id="contextMenu" class="context-menu" hidden role="menu"></div>
+
+<!-- ============================ MODAL ============================ -->
+<div id="modal" class="modal" hidden>
+  <form id="modalForm" class="modal-panel" role="dialog" aria-modal="true">
+    <h2 id="modalTitle">SkyVault</h2>
+    <p id="modalMessage"></p>
+    <input id="modalInput" type="text" autocomplete="off" hidden>
+    <div class="modal-actions">
+      <button type="button" id="modalCancel">Anuluj</button>
+      <button type="submit" id="modalOk" class="primary">OK</button>
+    </div>
+  </form>
+</div>
+
+<div id="infoModal" class="modal" hidden>
+  <div class="modal-panel" role="dialog" aria-modal="true">
+    <h2>Informacje</h2>
+    <dl id="infoList" class="info-list"></dl>
+    <div class="modal-actions">
+      <button type="button" class="primary" data-close-modal>OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="aboutModal" class="modal" hidden>
+  <div class="modal-panel about-panel" role="dialog" aria-modal="true">
+    <span class="brand-mark large">SV</span>
+    <h2>SkyVault</h2>
+    <p class="muted">Prywatna chmura plików z szyfrowaniem Zero-Knowledge.</p>
+    <dl class="info-list">
+      <dt>Wersja</dt><dd>0.1.0</dd>
+      <dt>Kryptografia</dt><dd>AES-GCM · Argon2id · HKDF-SHA256</dd>
+      <dt>Serwer</dt><dd>Spring Boot · PostgreSQL</dd>
+      <dt>Skróty</dt><dd>Ctrl+F szukaj · F2 zmień nazwę · Delete do kosza · Enter otwórz</dd>
+    </dl>
+    <div class="modal-actions">
+      <button type="button" class="primary" data-close-modal>OK</button>
+    </div>
+  </div>
+</div>
+
+<div id="previewModal" class="modal preview-modal" hidden>
+  <div class="modal-panel preview-panel" role="dialog" aria-modal="true">
+    <header class="preview-head">
+      <div>
+        <p class="eyebrow">Podgląd</p>
+        <h2 id="previewTitle"></h2>
+      </div>
+      <button class="icon-button" type="button" data-close-modal aria-label="Zamknij">
+        <svg class="icon"><use href="#i-close"></use></svg>
+      </button>
+    </header>
+    <div id="previewBody" class="preview-body"></div>
+  </div>
+</div>
+
 </body>
 </html>
