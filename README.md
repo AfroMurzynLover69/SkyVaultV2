@@ -155,6 +155,14 @@ another computer.
 > a certificate from a trusted CA. The password can be overridden with `SSL_KEYSTORE_PASSWORD`,
 > and the port with `PORT`.
 
+If another computer cannot connect, allow the port in Windows Firewall (administrator shell).
+The rule must match the network profile — `Private` for a home or laboratory network:
+
+```powershell
+New-NetFirewallRule -DisplayName "SkyVault HTTPS 8443" -Direction Inbound `
+    -Protocol TCP -LocalPort 8443 -Action Allow -Profile Private
+```
+
 ## Zero-Knowledge API
 
 The server **does not know the password, the master key or the file names**. All cryptography
