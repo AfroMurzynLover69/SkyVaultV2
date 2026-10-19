@@ -1,30 +1,22 @@
-/*
- * SkyVault — logika interfejsu.
- *
- * Mechanika przeniesiona ze starego projektu (dysk, biblioteki, kosz,
- * gwiazdki, menu kontekstowe, przeciąganie), ale cały widok jest czarno-biały.
- */
 (function () {
   'use strict';
 
   const C = window.SkyVaultCrypto;
 
-  // --- Stałe ---
-
   const MAX_UPLOAD_BYTES = 100 * 1024 * 1024 - 4096;
   const PREVIEW_TEXT_LIMIT = 512 * 1024;
 
   const VIEW_TITLES = {
-    home: 'Mój dysk',
-    computers: 'Komputery',
-    documents: 'Dokumenty',
-    images: 'Obrazy',
-    videos: 'Filmy',
-    music: 'Muzyka',
-    recent: 'Ostatnie',
-    starred: 'Oznaczone gwiazdką',
-    trash: 'Kosz',
-    storage: 'Skydysk'
+    home: 'My Drive',
+    computers: 'Computers',
+    documents: 'Documents',
+    images: 'Images',
+    videos: 'Videos',
+    music: 'Music',
+    recent: 'Recent',
+    starred: 'Starred',
+    trash: 'Trash',
+    storage: 'Storage'
   };
 
   const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif', 'tiff', 'tif'];
@@ -59,9 +51,7 @@
     tar: 'application/x-tar', gz: 'application/gzip', bz2: 'application/x-bzip2', xz: 'application/x-xz'
   };
 
-  const dateFormatter = new Intl.DateTimeFormat('pl-PL', { dateStyle: 'medium', timeStyle: 'short' });
-
-  // --- Stan ---
+  const dateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 
   const state = {
     user: null,
@@ -87,8 +77,6 @@
   let menuActions = [];
   let notifyTimer = null;
 
-  // --- Skróty DOM ---
-
   function $(id) {
     return document.getElementById(id);
   }
@@ -101,8 +89,6 @@
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#39;');
   }
-
-  // --- Narzędzia ścieżek ---
 
   function normalizePath(value) {
     return String(value || '')
@@ -157,18 +143,8 @@
     return index > 0 ? value.slice(index + 1).toLowerCase() : '';
   }
 
-  // --- Formatowanie ---
-
-  function plural(count, one, few, many) {
-    if (count === 1) {
-      return one;
-    }
-    const mod10 = count % 10;
-    const mod100 = count % 100;
-    if (mod10 >= 2 && mod10 <= 4 && !(mod100 >= 12 && mod100 <= 14)) {
-      return few;
-    }
-    return many;
+  function plural(count, one, many) {
+    return count === 1 ? one : many;
   }
 
   function formatBytes(bytes) {
@@ -184,7 +160,7 @@
       index += 1;
     }
     const digits = size >= 10 ? 0 : 1;
-    return size.toLocaleString('pl-PL', { maximumFractionDigits: digits }) + ' ' + units[index];
+    return size.toLocaleString('en-US', { maximumFractionDigits: digits }) + ' ' + units[index];
   }
 
   function formatDate(value) {
@@ -196,10 +172,8 @@
   }
 
   function countLabel(count) {
-    return count + ' ' + plural(count, 'element', 'elementy', 'elementów');
+    return count + ' ' + plural(count, 'item', 'items');
   }
-
-  // --- Ikony / typy ---
 
   function iconFor(entry) {
     if (entry.isFolder) {
@@ -233,8 +207,6 @@
     return Boolean(allowed) && allowed.includes(extensionOf(name));
   }
 
-  // --- API ---
-
   class ApiError extends Error {
     constructor(status, message) {
       super(message);
@@ -251,18 +223,17 @@
 
     if (response.status === 401 && !settings.allow401) {
       expireSession();
-      throw new ApiError(401, 'Sesja wygasła.');
+      throw new ApiError(401, 'Session expired.');
     }
 
     if (!response.ok) {
-      let message = 'Operacja nie powiodła się (' + response.status + ').';
+      let message = 'The operation failed (' + response.status + ').';
       try {
         const payload = await response.json();
         if (payload && payload.message) {
           message = payload.message;
         }
       } catch (ignored) {
-        // odpowiedź bez JSON-a
       }
       throw new ApiError(response.status, message);
     }
@@ -287,8 +258,6 @@
     }
   }
 
-  // --- Powiadomienia ---
-
   function notify(message, kind = 'info') {
     let toast = $('appToast');
     if (!toast) {
@@ -307,8 +276,6 @@
     }, 4600);
   }
 
-  // --- Ekran logowania ---
-
   function showAuthMessage(message) {
     const element = $('authMessage');
     element.textContent = message;
@@ -324,19 +291,19 @@
     document.querySelectorAll('[data-auth-mode]').forEach((button) => {
       button.classList.toggle('active', button.dataset.authMode === state.authMode);
     });
-    $('authTitle').textContent = state.authMode === 'register' ? 'Utwórz konto' : 'Zaloguj się';
-    $('authSubmit').textContent = state.authMode === 'register' ? 'Utwórz konto' : 'Zaloguj się';
+    $('authTitle').textContent = state.authMode === 'register' ? 'Create account' : 'Sign in';
+    $('authSubmit').textContent = state.authMode === 'register' ? 'Create account' : 'Sign in';
     $('authPassword').autocomplete = state.authMode === 'register' ? 'new-password' : 'current-password';
     $('authHint').hidden = state.authMode !== 'register';
-    $('authHint').textContent = 'Hasło chroni cały dysk. Minimum 10 znaków. Nie da się go odzyskać — zapisz kartę odzyskiwania.';
+    $('authHint').textContent = 'Your password protects the entire drive. Minimum 10 characters. It cannot be recovered, so save your recovery card.';
     hideAuthMessage();
   }
 
   function setBusy(busy, label) {
     $('authSubmit').disabled = busy;
     $('authSubmit').textContent = busy
-      ? (label || 'Przetwarzanie…')
-      : (state.authMode === 'register' ? 'Utwórz konto' : 'Zaloguj się');
+      ? (label || 'Processing...')
+      : (state.authMode === 'register' ? 'Create account' : 'Sign in');
     $('authEmail').disabled = busy;
     $('authPassword').disabled = busy;
   }
@@ -349,19 +316,19 @@
     const password = $('authPassword').value;
 
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-      showAuthMessage('Podaj poprawny adres e-mail.');
+      showAuthMessage('Enter a valid email address.');
       return;
     }
     if (!password) {
-      showAuthMessage('Podaj hasło główne.');
+      showAuthMessage('Enter your master password.');
       return;
     }
     if (state.authMode === 'register' && password.length < 10) {
-      showAuthMessage('Hasło musi mieć co najmniej 10 znaków.');
+      showAuthMessage('The password must be at least 10 characters long.');
       return;
     }
 
-    setBusy(true, 'Wyprowadzanie klucza…');
+    setBusy(true, 'Deriving key...');
     try {
       if (state.authMode === 'register') {
         await register(email, password);
@@ -369,7 +336,7 @@
         await login(email, password);
       }
     } catch (error) {
-      showAuthMessage(error.message || 'Nie udało się uwierzytelnić.');
+      showAuthMessage(error.message || 'Authentication failed.');
     } finally {
       setBusy(false);
     }
@@ -381,7 +348,7 @@
     const keys = await C.deriveKeys(password, salt);
     const wrapped = await C.wrapMasterKey(keys.kek, masterKey);
 
-    setBusy(true, 'Tworzenie konta…');
+    setBusy(true, 'Creating account...');
     await api('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -404,7 +371,7 @@
     const material = await api('/api/auth/crypto?email=' + encodeURIComponent(email), {}, { allow401: true });
     const keys = await C.deriveKeys(password, C.fromBase64(material.passwordSalt));
 
-    setBusy(true, 'Logowanie…');
+    setBusy(true, 'Signing in...');
     await api('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -419,7 +386,7 @@
         C.fromBase64(material.wrappedMasterKeyIv)
       );
     } catch (error) {
-      throw new Error('Nie udało się odszyfrować klucza głównego. Spróbuj ponownie.');
+      throw new Error('Could not decrypt the master key. Try again.');
     }
 
     C.storeMasterKey(email, masterKey);
@@ -469,48 +436,45 @@
     if (!state.inApp) {
       return;
     }
-    resetToAuth('Sesja wygasła. Zaloguj się ponownie — klucz główny trzeba odtworzyć z hasła.');
+    resetToAuth('Session expired. Sign in again to recreate the master key from your password.');
   }
 
   async function logout() {
     try {
       await api('/api/auth/logout', { method: 'POST' });
     } catch (error) {
-      // sesja mogła już wygasnąć
     }
     resetToAuth(null);
-    notify('Wylogowano.');
+    notify('Signed out.');
   }
 
   function offerRecoverySheet(email, masterKey) {
     const safeEmail = email.replace(/[^a-z0-9@._-]/gi, '_');
     confirmAction(
-      'Karta odzyskiwania',
-      'Konto zostało utworzone. Pobierz kartę odzyskiwania i zachowaj ją offline — '
-        + 'bez hasła i bez tej karty nie odzyskasz danych. SkyVault nie może jej odtworzyć.',
-      'Pobierz kartę'
+      'Recovery card',
+      'Your account has been created. Download your recovery card and keep it offline. '
+        + 'Without your password and this card, you cannot recover your data. SkyVault cannot recreate it.',
+      'Download card'
     ).then((accepted) => {
       if (!accepted) {
         return;
       }
       saveBlob(C.recoverySheet(email, masterKey), 'SkyVault-recovery-' + safeEmail + '.txt');
-      notify('Pobrano kartę odzyskiwania. Zachowaj ją offline.', 'success');
+      notify('Recovery card downloaded. Keep it offline.', 'success');
     });
   }
 
   function downloadRecovery() {
     const masterKey = C.loadMasterKey();
     if (!masterKey) {
-      notify('Brak klucza w tej karcie. Zaloguj się ponownie.', 'error');
+      notify('No key in this tab. Sign in again.', 'error');
       return;
     }
     const email = state.user ? state.user.email : C.storedEmail();
     const safeEmail = email.replace(/[^a-z0-9@._-]/gi, '_');
     saveBlob(C.recoverySheet(email, masterKey), 'SkyVault-recovery-' + safeEmail + '.txt');
-    notify('Pobrano kartę odzyskiwania. Zachowaj ją offline.');
+    notify('Recovery card downloaded. Keep it offline.');
   }
-
-  // --- Dane ---
 
   async function refreshData(initial = false) {
     if (initial) {
@@ -540,7 +504,7 @@
       if (state.inApp) {
         render();
         if (!error || error.status !== 401) {
-          notify((error && error.message) || 'Nie udało się wczytać danych.', 'error');
+          notify((error && error.message) || 'Could not load data.', 'error');
         }
       }
     }
@@ -549,9 +513,9 @@
   async function refresh() {
     try {
       await refreshData(false);
-      notify('Odświeżono.');
+      notify('Refreshed.');
     } catch (error) {
-      notify(error.message || 'Nie udało się odświeżyć.', 'error');
+      notify(error.message || 'Could not refresh.', 'error');
     }
   }
 
@@ -562,7 +526,7 @@
       try {
         path = normalizePath(await C.decryptPath(view.encryptedVirtualPath, view.virtualPathIv));
       } catch (error) {
-        path = 'nieczytelna-' + String(view.pathHash).slice(0, 8);
+        path = 'unreadable-' + String(view.pathHash).slice(0, 8);
       }
       entries.push({
         id: view.id,
@@ -637,7 +601,7 @@
       }
       let result = 0;
       if (key === 'name') {
-        result = a.name.localeCompare(b.name, 'pl', { sensitivity: 'base', numeric: true });
+        result = a.name.localeCompare(b.name, 'en', { sensitivity: 'base', numeric: true });
       } else if (key === 'size') {
         result = (a.sizeBytes || 0) - (b.sizeBytes || 0);
       } else {
@@ -648,8 +612,6 @@
       return result * direction;
     });
   }
-
-  // --- Render ---
 
   function render() {
     if (!state.inApp) {
@@ -683,8 +645,8 @@
     $('filesSurface').hidden = false;
 
     if (state.loading) {
-      $('fileCount').textContent = 'Wczytywanie…';
-      $('filesSurface').innerHTML = '<div class="empty-state"><p>Odszyfrowywanie zawartości dysku…</p></div>';
+      $('fileCount').textContent = 'Loading...';
+      $('filesSurface').innerHTML = '<div class="empty-state"><p>Decrypting drive contents...</p></div>';
       return;
     }
 
@@ -738,7 +700,7 @@
     const root = document.createElement('button');
     root.type = 'button';
     root.dataset.crumb = '';
-    root.textContent = 'Mój dysk';
+    root.textContent = 'My Drive';
     root.className = state.path ? '' : 'current';
     container.appendChild(root);
 
@@ -778,11 +740,11 @@
     const used = Number(user.usedBytes) || 0;
     const quota = Number(user.quotaBytes) || 0;
     const percent = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
-    const usage = formatBytes(used) + ' z ' + formatBytes(quota) + ' (' + percent.toFixed(1) + '%)';
+    const usage = formatBytes(used) + ' of ' + formatBytes(quota) + ' (' + percent.toFixed(1) + '%)';
 
     $('accountEmail').textContent = user.email;
     $('accountUsage').textContent = usage;
-    $('sidebarUsage').textContent = formatBytes(used) + ' z ' + formatBytes(quota);
+    $('sidebarUsage').textContent = formatBytes(used) + ' of ' + formatBytes(quota);
     $('settingsUsage').textContent = usage;
     $('sidebarMeter').style.width = percent + '%';
     $('accountMeter').style.width = percent + '%';
@@ -802,33 +764,33 @@
   }
 
   function emptyState() {
-    let title = 'Ten folder jest pusty.';
-    let hint = 'Przeciągnij pliki tutaj, aby je zaszyfrować i wysłać. '
-      + 'Kliknij prawym przyciskiem, aby utworzyć folder albo wysłać cały katalog.';
+    let title = 'This folder is empty.';
+    let hint = 'Drag files here to encrypt and upload them. '
+      + 'Right-click to create a folder or upload an entire folder.';
     if (state.search.trim()) {
-      title = 'Brak wyników dla „' + state.search.trim() + '”.';
-      hint = 'Zmień frazę lub wyczyść pole wyszukiwania.';
+      title = 'No results for "' + state.search.trim() + '".';
+      hint = 'Change your search or clear the search box.';
     } else if (state.view === 'trash') {
-      title = 'Kosz jest pusty.';
-      hint = 'Elementy przeniesione do kosza można tu przywrócić lub usunąć trwale.';
+      title = 'Trash is empty.';
+      hint = 'Items moved to trash can be restored or permanently deleted here.';
     } else if (state.view === 'starred') {
-      title = 'Nic nie jest oznaczone gwiazdką.';
-      hint = 'Użyj menu kontekstowego pliku, aby dodać gwiazdkę.';
+      title = 'Nothing is starred.';
+      hint = 'Use a file context menu to add a star.';
     } else if (state.view === 'recent') {
-      title = 'Brak ostatnio zmodyfikowanych plików.';
-      hint = 'Widok pokazuje 60 najnowszych plików z całego dysku.';
+      title = 'No recently modified files.';
+      hint = 'This view shows the 60 most recent files on the entire drive.';
     } else if (state.view === 'documents') {
-      title = 'Brak dokumentów.';
-      hint = 'Dokumenty (PDF, tekst, arkusze) pojawią się tutaj automatycznie.';
+      title = 'No documents.';
+      hint = 'Documents (PDF, text, spreadsheets) appear here automatically.';
     } else if (state.view === 'images') {
-      title = 'Brak obrazów.';
-      hint = 'Obrazy pojawią się tutaj automatycznie po przesłaniu.';
+      title = 'No images.';
+      hint = 'Images appear here automatically after upload.';
     } else if (state.view === 'videos') {
-      title = 'Brak filmów.';
-      hint = 'Filmy pojawią się tutaj automatycznie po przesłaniu.';
+      title = 'No videos.';
+      hint = 'Videos appear here automatically after upload.';
     } else if (state.view === 'music') {
-      title = 'Brak muzyki.';
-      hint = 'Pliki audio pojawią się tutaj automatycznie po przesłaniu.';
+      title = 'No music.';
+      hint = 'Audio files appear here automatically after upload.';
     }
 
     return '<div class="empty-state"><svg class="icon"><use href="#i-folder"></use></svg>'
@@ -854,19 +816,19 @@
         + (location ? '<span class="file-location">' + escapeHtml(location) + '</span>' : '')
         + '</div>'
         + (entry.starred ? '<svg class="icon star-mark"><use href="#i-star"></use></svg>' : '')
-        + (entry.isTrashed ? '<span class="trash-chip">Kosz</span>' : '')
+        + (entry.isTrashed ? '<span class="trash-chip">Trash</span>' : '')
         + '</div></td>'
         + '<td><span class="owner-chip"><span class="owner-avatar">' + escapeHtml(userInitial())
-        + '</span><span class="owner-name">Ja</span></span></td>'
+        + '</span><span class="owner-name">Me</span></span></td>'
         + '<td class="nowrap">' + formatDate(entry.modifiedAt) + '</td>'
         + '<td class="nowrap">' + (entry.isFolder ? '—' : formatBytes(entry.sizeBytes)) + '</td>'
         + '<td class="row-actions"><button type="button" class="icon-button row-menu" data-menu="'
-        + entry.pathHash + '" aria-label="Więcej"><svg class="icon"><use href="#i-dots"></use></svg></button></td>'
+        + entry.pathHash + '" aria-label="More"><svg class="icon"><use href="#i-dots"></use></svg></button></td>'
         + '</tr>';
     }).join('');
 
     return '<table class="files-table"><thead><tr>'
-      + '<th>Nazwa</th><th>Właściciel</th><th>Modyfikacja</th><th>Rozmiar</th><th></th>'
+      + '<th>Name</th><th>Owner</th><th>Modified</th><th>Size</th><th></th>'
       + '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
@@ -904,8 +866,6 @@
     });
   }
 
-  // --- Skydysk / Komputery ---
-
   function renderStorage() {
     const user = state.user;
     const files = state.files.filter((entry) => !entry.isFolder);
@@ -921,33 +881,33 @@
     const topRows = top.length
       ? top.map((entry) => '<div class="storage-row"><span>' + escapeHtml(entry.name)
         + '</span><span>' + formatBytes(entry.sizeBytes) + '</span></div>').join('')
-      : '<p class="muted">Brak plików.</p>';
+      : '<p class="muted">No files.</p>';
 
     $('storageView').innerHTML =
       '<div class="storage-overview">'
-      + '<div class="storage-main-stat"><span>Wykorzystanie Skydysku</span><strong>'
+      + '<div class="storage-main-stat"><span>Storage used</span><strong>'
       + formatBytes(used) + '<small> / ' + formatBytes(quota) + '</small></strong></div>'
       + '<div class="meter"><span style="width:' + percent + '%"></span></div>'
-      + '<p class="storage-percent">' + percent.toFixed(1) + '% limitu · pozostało '
-      + formatBytes(Math.max(0, quota - used)) + '</p>'
+      + '<p class="storage-percent">' + percent.toFixed(1) + '% of quota · '
+      + formatBytes(Math.max(0, quota - used)) + ' left</p>'
       + '</div>'
       + '<div class="storage-stats">'
-      + '<div><span>Pliki</span><strong>' + files.length + '</strong></div>'
-      + '<div><span>Foldery</span><strong>' + folders.length + '</strong></div>'
-      + '<div><span>W koszu</span><strong>' + state.trash.length + '</strong></div>'
-      + '<div><span>Zaszyfrowane</span><strong>' + formatBytes(storedTotal) + '</strong></div>'
+      + '<div><span>Files</span><strong>' + files.length + '</strong></div>'
+      + '<div><span>Folders</span><strong>' + folders.length + '</strong></div>'
+      + '<div><span>In trash</span><strong>' + state.trash.length + '</strong></div>'
+      + '<div><span>Encrypted</span><strong>' + formatBytes(storedTotal) + '</strong></div>'
       + '</div>'
-      + '<div class="storage-block"><h2>Największe pliki</h2>' + topRows + '</div>'
-      + '<div class="storage-block"><h2>Narzut szyfrowania</h2>'
-      + '<div class="storage-row"><span>Jawne dane</span><span>' + formatBytes(plainTotal) + '</span></div>'
-      + '<div class="storage-row"><span>Zaszyfrowane bloby</span><span>' + formatBytes(storedTotal) + '</span></div>'
-      + '<div class="storage-row"><span>IV + tag + nagłówek</span><span>' + formatBytes(overhead) + '</span></div>'
+      + '<div class="storage-block"><h2>Largest files</h2>' + topRows + '</div>'
+      + '<div class="storage-block"><h2>Encryption overhead</h2>'
+      + '<div class="storage-row"><span>Plain data</span><span>' + formatBytes(plainTotal) + '</span></div>'
+      + '<div class="storage-row"><span>Encrypted blobs</span><span>' + formatBytes(storedTotal) + '</span></div>'
+      + '<div class="storage-row"><span>IV + tag + header</span><span>' + formatBytes(overhead) + '</span></div>'
       + '</div>';
   }
 
   function browserInfo() {
     const ua = navigator.userAgent;
-    let browser = 'Przeglądarka';
+    let browser = 'Browser';
     let system = 'System';
 
     if (/Edg\//.test(ua)) {
@@ -982,22 +942,20 @@
     $('computersView').innerHTML =
       '<div class="device-card">'
       + '<div class="device-identity"><svg class="icon"><use href="#i-computers"></use></svg>'
-      + '<div><strong>' + escapeHtml(info.browser) + ' na ' + escapeHtml(info.system) + '</strong>'
-      + '<span>Ta przeglądarka · sesja aktywna</span></div></div>'
-      + '<div><span class="device-label">Zalogowano</span><strong>' + escapeHtml(started) + '</strong></div>'
-      + '<div><span class="device-label">Klucz</span><strong>w pamięci karty</strong></div>'
+      + '<div><strong>' + escapeHtml(info.browser) + ' on ' + escapeHtml(info.system) + '</strong>'
+      + '<span>This browser · session active</span></div></div>'
+      + '<div><span class="device-label">Signed in</span><strong>' + escapeHtml(started) + '</strong></div>'
+      + '<div><span class="device-label">Key</span><strong>in tab memory</strong></div>'
       + '<div class="device-status">Online</div>'
       + '</div>'
       + '<div class="storage-block">'
-      + '<h2>Jak działają urządzenia</h2>'
-      + '<p class="muted">SkyVault nie przechowuje listy urządzeń ani adresów IP w tym widoku. '
-      + 'Każda przeglądarka odblokowuje dysk osobno: po zalogowaniu klucz główny jest odtwarzany '
-      + 'z hasła wyłącznie lokalnie i trzymany w pamięci tej karty. Zamknięcie karty zapomina klucz.</p>'
-      + '<p class="muted">Wylogowanie unieważnia sesję po stronie serwera.</p>'
+      + '<h2>How devices work</h2>'
+      + '<p class="muted">SkyVault does not keep a list of devices or IP addresses in this view. '
+      + 'Each browser unlocks the drive separately: after signing in, the master key is recreated '
+      + 'from your password locally and kept only in this tab\'s memory. Closing the tab forgets the key.</p>'
+      + '<p class="muted">Signing out invalidates the session on the server.</p>'
       + '</div>';
   }
-
-  // --- Nawigacja ---
 
   function setView(view, path) {
     state.view = view;
@@ -1037,8 +995,6 @@
     return state.view === 'home' ? state.path : '';
   }
 
-  // --- Operacje na plikach ---
-
   async function openEntry(entry) {
     if (entry.isFolder) {
       setView('home', entry.path);
@@ -1051,7 +1007,7 @@
     try {
       await api('/api/files/' + entry.pathHash + '/star', { method: 'POST' });
       await refreshData(false);
-      notify(entry.starred ? 'Usunięto gwiazdkę.' : 'Dodano gwiazdkę.');
+      notify(entry.starred ? 'Star removed.' : 'Star added.');
     } catch (error) {
       notify(error.message, 'error');
     }
@@ -1068,10 +1024,10 @@
   async function trashEntry(entry) {
     const children = collectWithDescendants(entry, state.files);
     const confirmed = await confirmAction(
-      'Przenieść do kosza?',
-      '„' + entry.name + '”' + (entry.isFolder ? ' wraz z zawartością (' + (children.length - 1) + ' elementów)' : '')
-      + ' trafi do kosza. Możesz go później przywrócić.',
-      'Przenieś do kosza'
+      'Move to trash?',
+      '"' + entry.name + '"' + (entry.isFolder ? ' and its contents (' + (children.length - 1) + ' items)' : '')
+      + ' will be moved to trash. You can restore it later.',
+      'Move to trash'
     );
     if (!confirmed) {
       return;
@@ -1083,7 +1039,7 @@
       }
       state.selectedHash = null;
       await refreshData(false);
-      notify('Przeniesiono do kosza.');
+      notify('Moved to trash.');
     } catch (error) {
       notify(error.message, 'error');
       await refreshDataSafe(false);
@@ -1098,7 +1054,7 @@
       }
       state.selectedHash = null;
       await refreshData(false);
-      notify('Przywrócono z kosza.');
+      notify('Restored from trash.');
     } catch (error) {
       notify(error.message, 'error');
       await refreshDataSafe(false);
@@ -1108,10 +1064,10 @@
   async function deleteEntry(entry) {
     const children = collectWithDescendants(entry, state.trash);
     const confirmed = await confirmAction(
-      'Usunąć trwale?',
-      '„' + entry.name + '”' + (entry.isFolder ? ' i cała zawartość' : '')
-      + ' zostanie usunięty bez możliwości przywrócenia.',
-      'Usuń trwale'
+      'Delete permanently?',
+      '"' + entry.name + '"' + (entry.isFolder ? ' and all of its contents' : '')
+      + ' will be permanently deleted. This cannot be undone.',
+      'Delete permanently'
     );
     if (!confirmed) {
       return;
@@ -1124,7 +1080,7 @@
       }
       state.selectedHash = null;
       await refreshData(false);
-      notify('Usunięto trwale.');
+      notify('Permanently deleted.');
     } catch (error) {
       notify(error.message, 'error');
       await refreshDataSafe(false);
@@ -1136,9 +1092,9 @@
       return;
     }
     const confirmed = await confirmAction(
-      'Opróżnić kosz?',
-      'Wszystkie elementy w koszu (' + state.trash.length + ') zostaną usunięte bez możliwości przywrócenia.',
-      'Opróżnij kosz'
+      'Empty trash?',
+      'All items in trash (' + state.trash.length + ') will be permanently deleted. This cannot be undone.',
+      'Empty trash'
     );
     if (!confirmed) {
       return;
@@ -1151,7 +1107,7 @@
       }
       state.selectedHash = null;
       await refreshData(false);
-      notify('Kosz opróżniony.');
+      notify('Trash emptied.');
     } catch (error) {
       notify(error.message, 'error');
       await refreshDataSafe(false);
@@ -1164,7 +1120,7 @@
       return;
     }
     if (entry.isFolder && (target === entry.path || target.startsWith(entry.path + '/'))) {
-      notify('Nie można przenieść folderu do niego samego.', 'error');
+      notify('You cannot move a folder into itself.', 'error');
       return;
     }
 
@@ -1179,7 +1135,7 @@
       .filter((item) => !affectedHashes.has(item.pathHash))
       .map((item) => item.path.toLowerCase()));
     if (mappings.some((mapping) => lowered.has(mapping.newPath.toLowerCase()))) {
-      notify('W folderze docelowym istnieje już element o tej nazwie.', 'error');
+      notify('An item with this name already exists in the target folder.', 'error');
       return;
     }
 
@@ -1197,7 +1153,7 @@
         });
       }
       await refreshData(false);
-      notify('Przeniesiono.');
+      notify('Moved.');
     } catch (error) {
       notify(error.message, 'error');
       await refreshDataSafe(false);
@@ -1205,12 +1161,12 @@
   }
 
   async function renameEntry(entry) {
-    const value = await askText('Zmień nazwę', 'Podaj nową nazwę dla „' + entry.name + '”.', entry.name);
+    const value = await askText('Rename', 'Enter a new name for "' + entry.name + '".', entry.name);
     if (!value || value === entry.name) {
       return;
     }
     if (/[\\/]/.test(value)) {
-      notify('Nazwa nie może zawierać ukośników.', 'error');
+      notify('The name cannot contain slashes.', 'error');
       return;
     }
     await moveEntryTo(entry, joinPath(parentPath(entry.path), sanitizeName(value)));
@@ -1218,10 +1174,10 @@
 
   async function moveEntryDialog(entry) {
     const value = await askText(
-      'Przenieś',
-      'Podaj folder docelowy. Puste pole oznacza folder główny.',
+      'Move',
+      'Enter the destination folder. Leave empty for My Drive.',
       parentPath(entry.path),
-      'np. Dokumenty/2026',
+      'e.g. Documents/2026',
       true
     );
     if (value === null) {
@@ -1243,7 +1199,7 @@
 
   async function createFolder() {
     const folder = uploadFolder();
-    const value = await askText('Nowy folder', 'Podaj nazwę folderu.', '', 'Nowy folder');
+    const value = await askText('New folder', 'Enter a folder name.', '', 'New folder');
     if (value === null) {
       return;
     }
@@ -1267,14 +1223,14 @@
         })
       });
       await refreshData(false);
-      notify('Utworzono folder „' + displayName(path) + '”.');
+      notify('Created folder "' + displayName(path) + '".');
     } catch (error) {
       notify(error.message, 'error');
     }
   }
 
   function uniquePath(folder, name, reserved) {
-    const clean = sanitizeName(name) || 'plik';
+    const clean = sanitizeName(name) || 'file';
     const existing = reserved || new Set(state.files.map((entry) => entry.path.toLowerCase()));
     const direct = joinPath(folder, clean);
     if (!existing.has(direct.toLowerCase())) {
@@ -1293,8 +1249,6 @@
     }
     return joinPath(folder, base + ' (' + Date.now() + ')' + extension);
   }
-
-  // --- Pobieranie i podgląd ---
 
   function saveBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
@@ -1315,11 +1269,11 @@
 
   async function downloadEntry(entry) {
     try {
-      notify('Odszyfrowywanie „' + entry.name + '”…');
+      notify('Decrypting "' + entry.name + '"...');
       const plain = await fetchPlain(entry);
       const ext = extensionOf(entry.name);
       saveBlob(new Blob([plain], { type: mimeFor(ext) }), entry.name);
-      notify('Pobrano „' + entry.name + '”.');
+      notify('Downloaded "' + entry.name + '".');
     } catch (error) {
       notify(error.message, 'error');
     }
@@ -1334,7 +1288,7 @@
 
   async function previewEntry(entry) {
     $('previewTitle').textContent = entry.name;
-    $('previewBody').innerHTML = '<p class="preview-note">Odszyfrowywanie w przeglądarce…</p>';
+    $('previewBody').innerHTML = '<p class="preview-note">Decrypting in your browser...</p>';
     $('previewModal').hidden = false;
 
     try {
@@ -1358,9 +1312,9 @@
         const slice = plain.length > PREVIEW_TEXT_LIMIT ? plain.subarray(0, PREVIEW_TEXT_LIMIT) : plain;
         const text = new TextDecoder('utf-8', { fatal: false }).decode(slice);
         $('previewBody').innerHTML = '<pre>' + escapeHtml(text)
-          + (plain.length > slice.length ? '\n\n… podgląd skrócony' : '') + '</pre>';
+          + (plain.length > slice.length ? '\n\n... preview truncated' : '') + '</pre>';
       } else {
-        $('previewBody').innerHTML = '<p class="preview-note">Brak podglądu dla tego typu pliku. Pobierz plik, aby go otworzyć.</p>';
+        $('previewBody').innerHTML = '<p class="preview-note">No preview available for this file type. Download the file to open it.</p>';
       }
     } catch (error) {
       $('previewBody').innerHTML = '<p class="preview-note preview-error">' + escapeHtml(error.message) + '</p>';
@@ -1390,15 +1344,13 @@
     $('previewModal').hidden = true;
   }
 
-  // --- Upload ---
-
   function uploadFiles(files, folder) {
     const list = Array.from(files || []);
     if (!list.length) {
       return;
     }
     if (state.view !== 'home') {
-      notify('Pliki zostaną dodane do folderu głównego.');
+      notify('Files will be added to My Drive.');
     }
     performUpload(list.map((file) => ({ file: file, folder: folder })));
   }
@@ -1459,15 +1411,15 @@
 
   function showUploadToast(items) {
     $('uploadToast').hidden = false;
-    $('uploadTitle').textContent = 'Przesyłanie ' + items.length + ' '
-      + plural(items.length, 'pliku', 'plików', 'plików');
-    $('uploadSubtitle').textContent = 'Pliki są szyfrowane w tej karcie przed wysłaniem.';
+    $('uploadTitle').textContent = 'Uploading ' + items.length + ' '
+      + plural(items.length, 'file', 'files');
+    $('uploadSubtitle').textContent = 'Files are encrypted in this tab before upload.';
     $('uploadMeter').style.width = '0%';
     $('uploadQueue').innerHTML = items.map((item, index) =>
       '<div class="upload-item" data-upload-index="' + index + '" data-status="pending">'
       + '<span class="upload-item-name" title="' + escapeHtml(item.file.name) + '">'
       + escapeHtml(item.file.name) + '</span>'
-      + '<span class="upload-item-detail">Oczekuje…</span></div>').join('');
+      + '<span class="upload-item-detail">Waiting...</span></div>').join('');
   }
 
   function setUploadItem(index, status, detail) {
@@ -1484,7 +1436,7 @@
 
   function updateUploadProgress(done, total) {
     $('uploadMeter').style.width = total ? Math.round((done / total) * 100) + '%' : '0%';
-    $('uploadSubtitle').textContent = done + ' z ' + total + ' · szyfrowanie AES-GCM w przeglądarce';
+    $('uploadSubtitle').textContent = done + ' of ' + total + ' · AES-GCM encryption in your browser';
   }
 
   async function performUpload(items) {
@@ -1492,7 +1444,7 @@
       return;
     }
     if (state.uploading) {
-      notify('Trwa już przesyłanie plików. Poczekaj na zakończenie.', 'error');
+      notify('An upload is already in progress. Wait for it to finish.', 'error');
       return;
     }
 
@@ -1515,20 +1467,20 @@
 
       try {
         if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error('Plik przekracza 100 MB.');
+          throw new Error('The file exceeds 100 MB.');
         }
         if (quota > 0 && projectedUsed + file.size > quota) {
-          throw new Error('Przekroczono limit miejsca na koncie.');
+          throw new Error('The account storage limit has been exceeded.');
         }
         if (!C.loadMasterKey()) {
-          throw new Error('Brak klucza w tej karcie.');
+          throw new Error('No key in this tab.');
         }
 
-        setUploadItem(index, 'working', 'Szyfrowanie…');
+        setUploadItem(index, 'working', 'Encrypting...');
         const meta = await C.encryptPath(path);
         const encrypted = await C.encryptBlob(await file.arrayBuffer());
 
-        setUploadItem(index, 'working', 'Przesyłanie…');
+        setUploadItem(index, 'working', 'Uploading...');
         const form = new FormData();
         form.append('pathHash', meta.pathHash);
         form.append('encryptedVirtualPath', meta.encryptedVirtualPath);
@@ -1539,18 +1491,18 @@
         await api('/api/files', { method: 'POST', body: form });
         projectedUsed += file.size;
         succeeded += 1;
-        setUploadItem(index, 'done', 'Zaszyfrowano i wysłano');
+        setUploadItem(index, 'done', 'Encrypted and uploaded');
       } catch (error) {
         failed += 1;
-        setUploadItem(index, 'error', error.message || 'Błąd przesyłania');
+        setUploadItem(index, 'error', error.message || 'Upload failed');
       }
 
       updateUploadProgress(index + 1, total);
     }
 
     state.uploading = false;
-    $('uploadTitle').textContent = failed ? 'Przesyłanie zakończone' : 'Przesłano pliki';
-    $('uploadSubtitle').textContent = 'Gotowe: ' + succeeded + ' · błędy: ' + failed;
+    $('uploadTitle').textContent = failed ? 'Upload finished' : 'Upload complete';
+    $('uploadSubtitle').textContent = 'Done: ' + succeeded + ' · errors: ' + failed;
 
     if (succeeded) {
       await refreshDataSafe(false);
@@ -1564,8 +1516,6 @@
     }
   }
 
-  // --- Menu kontekstowe ---
-
   function openContextMenu(entry, anchor) {
     const menu = $('contextMenu');
     $('accountPanel').hidden = true;
@@ -1573,29 +1523,29 @@
 
     if (!entry) {
       menuActions = [
-        { label: 'Nowy folder', action: createFolder },
-        { label: 'Prześlij pliki', action: () => $('fileInput').click() },
-        { label: 'Prześlij folder', action: () => $('folderInput').click() },
-        { label: 'Odśwież', action: refresh }
+        { label: 'New folder', action: createFolder },
+        { label: 'Upload files', action: () => $('fileInput').click() },
+        { label: 'Upload folder', action: () => $('folderInput').click() },
+        { label: 'Refresh', action: refresh }
       ];
     } else if (entry.isTrashed) {
       menuActions = [
-        { label: 'Przywróć', action: () => restoreEntry(entry) },
-        { label: 'Usuń trwale', action: () => deleteEntry(entry) },
-        { label: 'Informacje', action: () => showInfo(entry) }
+        { label: 'Restore', action: () => restoreEntry(entry) },
+        { label: 'Delete permanently', action: () => deleteEntry(entry) },
+        { label: 'Details', action: () => showInfo(entry) }
       ];
     } else {
       menuActions = [
-        { label: entry.isFolder ? 'Otwórz' : 'Podgląd', action: () => openEntry(entry) }
+        { label: entry.isFolder ? 'Open' : 'Preview', action: () => openEntry(entry) }
       ];
       if (!entry.isFolder) {
-        menuActions.push({ label: 'Pobierz', action: () => downloadEntry(entry) });
+        menuActions.push({ label: 'Download', action: () => downloadEntry(entry) });
       }
-      menuActions.push({ label: entry.starred ? 'Usuń gwiazdkę' : 'Dodaj gwiazdkę', action: () => toggleStar(entry) });
-      menuActions.push({ label: 'Zmień nazwę', action: () => renameEntry(entry) });
-      menuActions.push({ label: 'Przenieś', action: () => moveEntryDialog(entry) });
-      menuActions.push({ label: 'Informacje', action: () => showInfo(entry) });
-      menuActions.push({ label: 'Przenieś do kosza', action: () => trashEntry(entry) });
+      menuActions.push({ label: entry.starred ? 'Remove star' : 'Add star', action: () => toggleStar(entry) });
+      menuActions.push({ label: 'Rename', action: () => renameEntry(entry) });
+      menuActions.push({ label: 'Move', action: () => moveEntryDialog(entry) });
+      menuActions.push({ label: 'Details', action: () => showInfo(entry) });
+      menuActions.push({ label: 'Move to trash', action: () => trashEntry(entry) });
     }
 
     menu.innerHTML = menuActions.map((item, index) =>
@@ -1632,8 +1582,6 @@
     menuActions = [];
   }
 
-  // --- Modale ---
-
   function closeModalElement(id) {
     if (id === 'previewModal') {
       closePreview();
@@ -1650,7 +1598,7 @@
     input.value = value;
     input.placeholder = placeholder;
     modalAllowEmpty = allowEmpty;
-    $('modalOk').textContent = 'Zapisz';
+    $('modalOk').textContent = 'Save';
     $('modal').hidden = false;
     setTimeout(() => {
       input.focus();
@@ -1687,29 +1635,25 @@
 
   function showInfo(entry) {
     $('infoList').innerHTML =
-      '<dt>Nazwa</dt><dd>' + escapeHtml(entry.name) + '</dd>'
-      + '<dt>Ścieżka</dt><dd>' + escapeHtml(entry.path) + '</dd>'
-      + '<dt>Typ</dt><dd>' + (entry.isFolder ? 'Folder' : escapeHtml(extensionOf(entry.name).toUpperCase() || 'plik'))
+      '<dt>Name</dt><dd>' + escapeHtml(entry.name) + '</dd>'
+      + '<dt>Path</dt><dd>' + escapeHtml(entry.path) + '</dd>'
+      + '<dt>Type</dt><dd>' + (entry.isFolder ? 'Folder' : escapeHtml(extensionOf(entry.name).toUpperCase() || 'file'))
       + '</dd>'
-      + '<dt>Rozmiar</dt><dd>' + (entry.isFolder ? '—' : formatBytes(entry.sizeBytes)) + '</dd>'
-      + '<dt>Na serwerze</dt><dd>'
-      + (entry.isFolder ? '—' : formatBytes(entry.storedSizeBytes) + ' (zaszyfrowane)') + '</dd>'
-      + '<dt>Modyfikacja</dt><dd>' + formatDate(entry.modifiedAt) + '</dd>'
-      + '<dt>Gwiazdka</dt><dd>' + (entry.starred ? 'Tak' : 'Nie') + '</dd>'
-      + '<dt>Skrót</dt><dd class="mono">' + escapeHtml(entry.pathHash) + '</dd>';
+      + '<dt>Size</dt><dd>' + (entry.isFolder ? '—' : formatBytes(entry.sizeBytes)) + '</dd>'
+      + '<dt>On server</dt><dd>'
+      + (entry.isFolder ? '—' : formatBytes(entry.storedSizeBytes) + ' (encrypted)') + '</dd>'
+      + '<dt>Modified</dt><dd>' + formatDate(entry.modifiedAt) + '</dd>'
+      + '<dt>Starred</dt><dd>' + (entry.starred ? 'Yes' : 'No') + '</dd>'
+      + '<dt>Hash</dt><dd class="mono">' + escapeHtml(entry.pathHash) + '</dd>';
     $('infoModal').hidden = false;
   }
 
-  // --- Zdarzenia ---
-
   function bindEvents() {
-    // Logowanie
     document.querySelectorAll('[data-auth-mode]').forEach((button) => {
       button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
     });
     $('authForm').addEventListener('submit', handleAuthSubmit);
 
-    // Nawigacja
     document.querySelectorAll('.nav-item[data-view]').forEach((button) => {
       button.addEventListener('click', () => setView(button.dataset.view, button.dataset.path || ''));
     });
@@ -1720,12 +1664,10 @@
       button.addEventListener('click', () => setView('home', ''));
     });
 
-    // Widok
     document.querySelectorAll('.view-button[data-view-mode]').forEach((button) => {
       button.addEventListener('click', () => setViewMode(button.dataset.viewMode));
     });
 
-    // Pasek narzędzi
     $('uploadButton').addEventListener('click', () => $('fileInput').click());
     $('newFolderButton').addEventListener('click', createFolder);
     $('emptyTrashButton').addEventListener('click', emptyTrash);
@@ -1740,7 +1682,6 @@
       handleFolderUpload(files);
     });
 
-    // Filtry
     $('searchInput').addEventListener('input', (event) => {
       state.search = event.target.value;
       render();
@@ -1754,7 +1695,6 @@
       render();
     });
 
-    // Konto / panele
     $('accountButton').addEventListener('click', (event) => {
       event.stopPropagation();
       $('accountPanel').hidden = !$('accountPanel').hidden;
@@ -1771,12 +1711,10 @@
     $('logoutButton').addEventListener('click', logout);
     $('recoveryButton').addEventListener('click', downloadRecovery);
 
-    // Postęp uploadu
     $('uploadClose').addEventListener('click', () => {
       $('uploadToast').hidden = true;
     });
 
-    // Breadcrumbs
     $('breadcrumbs').addEventListener('click', (event) => {
       const button = event.target.closest('[data-crumb]');
       if (button) {
@@ -1784,7 +1722,6 @@
       }
     });
 
-    // Menu kontekstowe
     $('contextMenu').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-index]');
       if (!button) {
@@ -1797,7 +1734,6 @@
       }
     });
 
-    // Kliknięcia globalne
     document.addEventListener('click', (event) => {
       if (!event.target.closest('#contextMenu') && !event.target.closest('[data-menu]')) {
         closeContextMenu();
@@ -2055,8 +1991,6 @@
     });
   }
 
-  // --- Start ---
-
   async function init() {
     state.viewMode = localStorage.getItem('skyvaultViewMode') === 'grid' ? 'grid' : 'list';
     bindEvents();
@@ -2066,12 +2000,12 @@
     try {
       await C.ensureSodium();
     } catch (error) {
-      showAuthMessage('Nie udało się wczytać biblioteki kryptograficznej. Odśwież stronę.');
+      showAuthMessage('Could not load the cryptography library. Refresh the page.');
       return;
     }
 
     if (!window.crypto || !window.crypto.subtle) {
-      showAuthMessage('Ta przeglądarka nie udostępnia Web Crypto. Otwórz SkyVault przez localhost lub HTTPS.');
+      showAuthMessage('This browser does not provide Web Crypto. Open SkyVault through localhost or HTTPS.');
       return;
     }
 
@@ -2084,8 +2018,8 @@
     if (profile) {
       $('authEmail').value = profile.email || C.storedEmail();
       setAuthMode('login');
-      showAuthMessage('Sesja jest aktywna, ale klucz główny nie jest wczytany w tej karcie. '
-        + 'Podaj hasło, aby odblokować dysk.');
+      showAuthMessage('The session is active, but the master key is not loaded in this tab. '
+        + 'Enter your password to unlock the drive.');
     }
   }
 

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SkyVault</title>
-  <meta name="description" content="SkyVault — prywatna chmura plików z szyfrowaniem Zero-Knowledge.">
+  <meta name="description" content="SkyVault: private file cloud with Zero-Knowledge encryption.">
   <link rel="stylesheet" href="/style.css">
   <script defer src="/vendor/libsodium-sumo.js"></script>
   <script defer src="/vendor/libsodium-wrappers-sumo.js"></script>
@@ -13,7 +13,6 @@
 </head>
 <body>
 
-<!-- ============================ IKONY ============================ -->
 <svg class="icon-sprite" aria-hidden="true" focusable="false">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.2 12 4l9 7.2V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-drive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
@@ -47,7 +46,6 @@
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
 </svg>
 
-<!-- ============================ EKRAN LOGOWANIA ============================ -->
 <main id="authScreen" class="auth-screen">
   <section class="auth-art">
     <div class="auth-art-inner">
@@ -55,52 +53,51 @@
         <span class="brand-mark">SV</span>
         <span class="brand-name">SkyVault</span>
       </div>
-      <h1>Twoje pliki.<br>Twój klucz.</h1>
-      <p>Zero-Knowledge: hasło i klucz główny nigdy nie opuszczają tej przeglądarki.
-         Serwer przechowuje tylko zaszyfrowane dane, których nie potrafi odczytać.</p>
+      <h1>Your files.<br>Your key.</h1>
+      <p>Zero-Knowledge: your password and master key never leave this browser.
+         The server stores only encrypted data that it cannot read.</p>
       <ul class="auth-points">
-        <li><svg class="icon"><use href="#i-lock"></use></svg><span>AES-GCM 256 na każdym pliku</span></li>
-        <li><svg class="icon"><use href="#i-lock"></use></svg><span>Argon2id — 256 MB pamięci na hasło</span></li>
-        <li><svg class="icon"><use href="#i-lock"></use></svg><span>Nazwy plików też są szyfrowane</span></li>
+        <li><svg class="icon"><use href="#i-lock"></use></svg><span>AES-GCM 256 on every file</span></li>
+        <li><svg class="icon"><use href="#i-lock"></use></svg><span>Argon2id: 256 MB of memory per password</span></li>
+        <li><svg class="icon"><use href="#i-lock"></use></svg><span>File names are encrypted too</span></li>
       </ul>
     </div>
   </section>
 
   <section class="auth-panel">
     <div class="auth-panel-inner">
-      <div class="auth-switch" role="tablist" aria-label="Tryb">
-        <button type="button" data-auth-mode="login" class="active" role="tab">Logowanie</button>
-        <button type="button" data-auth-mode="register" role="tab">Rejestracja</button>
+      <div class="auth-switch" role="tablist" aria-label="Mode">
+        <button type="button" data-auth-mode="login" class="active" role="tab">Sign in</button>
+        <button type="button" data-auth-mode="register" role="tab">Sign up</button>
       </div>
 
       <form id="authForm" class="auth-card" novalidate>
-        <h2 id="authTitle">Zaloguj się</h2>
+        <h2 id="authTitle">Sign in</h2>
         <p id="authMessage" class="auth-message" hidden></p>
 
-        <label for="authEmail">Adres e-mail</label>
+        <label for="authEmail">Email address</label>
         <input id="authEmail" name="email" type="email" maxlength="254"
                autocomplete="username" spellcheck="false" required>
 
-        <label for="authPassword">Hasło główne</label>
+        <label for="authPassword">Master password</label>
         <input id="authPassword" name="password" type="password"
                autocomplete="current-password" required>
 
         <p id="authHint" class="auth-hint" hidden></p>
 
         <div class="auth-actions">
-          <button id="authSubmit" type="submit" class="primary">Zaloguj się</button>
+          <button id="authSubmit" type="submit" class="primary">Sign in</button>
         </div>
 
         <p class="auth-note">
-          Hasło nigdy nie jest wysyłane. Serwer otrzymuje wyłącznie weryfikator
-          i klucz główny zapakowany kluczem, którego nie zna.
+          The password is never sent. The server only receives a verifier
+          and the master key wrapped with a key it does not know.
         </p>
       </form>
     </div>
   </section>
 </main>
 
-<!-- ============================ APLIKACJA ============================ -->
 <section id="appScreen" class="app-shell" hidden>
   <header class="topbar">
     <button class="brand-button" type="button" data-nav="home">
@@ -109,92 +106,92 @@
     </button>
 
     <div class="topbar-actions">
-      <button class="icon-button" id="helpButton" type="button" title="Pomoc" aria-label="Pomoc">
+      <button class="icon-button" id="helpButton" type="button" title="Help" aria-label="Help">
         <svg class="icon"><use href="#i-help"></use></svg>
       </button>
-      <button class="icon-button" id="settingsButton" type="button" title="Ustawienia" aria-label="Ustawienia">
+      <button class="icon-button" id="settingsButton" type="button" title="Settings" aria-label="Settings">
         <svg class="icon"><use href="#i-settings"></use></svg>
       </button>
-      <button class="avatar-button" id="accountButton" type="button" title="Konto" aria-label="Konto">?</button>
+      <button class="avatar-button" id="accountButton" type="button" title="Account" aria-label="Account">?</button>
     </div>
   </header>
 
   <aside class="sidebar">
-    <nav class="nav-list" aria-label="Sekcje">
-      <p class="nav-heading">Dysk</p>
+    <nav class="nav-list" aria-label="Sections">
+      <p class="nav-heading">Drive</p>
       <button class="nav-item" type="button" data-view="home" data-path="">
-        <svg class="icon"><use href="#i-home"></use></svg><span>Strona główna</span>
+        <svg class="icon"><use href="#i-home"></use></svg><span>Home</span>
       </button>
       <button class="nav-item" type="button" data-action="root">
-        <svg class="icon"><use href="#i-folder"></use></svg><span>Mój dysk</span>
+        <svg class="icon"><use href="#i-folder"></use></svg><span>My Drive</span>
       </button>
       <button class="nav-item" type="button" data-view="computers">
-        <svg class="icon"><use href="#i-computers"></use></svg><span>Komputery</span>
+        <svg class="icon"><use href="#i-computers"></use></svg><span>Computers</span>
       </button>
 
-      <p class="nav-heading">Biblioteka</p>
+      <p class="nav-heading">Library</p>
       <button class="nav-item" type="button" data-view="documents">
-        <svg class="icon"><use href="#i-documents"></use></svg><span>Dokumenty</span>
+        <svg class="icon"><use href="#i-documents"></use></svg><span>Documents</span>
       </button>
       <button class="nav-item" type="button" data-view="images">
-        <svg class="icon"><use href="#i-images"></use></svg><span>Obrazy</span>
+        <svg class="icon"><use href="#i-images"></use></svg><span>Images</span>
       </button>
       <button class="nav-item" type="button" data-view="videos">
-        <svg class="icon"><use href="#i-videos"></use></svg><span>Filmy</span>
+        <svg class="icon"><use href="#i-videos"></use></svg><span>Videos</span>
       </button>
       <button class="nav-item" type="button" data-view="music">
-        <svg class="icon"><use href="#i-music"></use></svg><span>Muzyka</span>
+        <svg class="icon"><use href="#i-music"></use></svg><span>Music</span>
       </button>
       <button class="nav-item" type="button" data-view="recent">
-        <svg class="icon"><use href="#i-recent"></use></svg><span>Ostatnie</span>
+        <svg class="icon"><use href="#i-recent"></use></svg><span>Recent</span>
       </button>
       <button class="nav-item" type="button" data-view="starred">
-        <svg class="icon"><use href="#i-star"></use></svg><span>Oznaczone gwiazdką</span>
+        <svg class="icon"><use href="#i-star"></use></svg><span>Starred</span>
       </button>
       <button class="nav-item" type="button" data-view="trash">
-        <svg class="icon"><use href="#i-trash"></use></svg><span>Kosz</span>
+        <svg class="icon"><use href="#i-trash"></use></svg><span>Trash</span>
       </button>
     </nav>
 
     <div class="storage-summary">
       <button class="nav-item storage-link" type="button" data-view="storage">
-        <svg class="icon"><use href="#i-storage"></use></svg><span>Skydysk</span>
+        <svg class="icon"><use href="#i-storage"></use></svg><span>Storage</span>
       </button>
       <div class="meter"><span id="sidebarMeter"></span></div>
-      <p id="sidebarUsage">0 B z 0 B</p>
+      <p id="sidebarUsage">0 B of 0 B</p>
     </div>
   </aside>
 
   <main class="workspace">
     <header class="workspace-top">
-      <h1 id="workspaceTitle">Mój dysk</h1>
+      <h1 id="workspaceTitle">My Drive</h1>
 
       <div id="accountPanel" class="account-menu" hidden>
         <p class="account-email" id="accountEmail"></p>
-        <p class="account-plan">Plan lokalny</p>
+        <p class="account-plan">Local plan</p>
         <div class="meter"><span id="accountMeter"></span></div>
         <p class="account-usage" id="accountUsage"></p>
         <button class="secondary" id="recoveryButton" type="button">
-          <svg class="icon"><use href="#i-lock"></use></svg><span>Karta odzyskiwania</span>
+          <svg class="icon"><use href="#i-lock"></use></svg><span>Recovery card</span>
         </button>
         <button class="secondary" id="logoutButton" type="button">
-          <svg class="icon"><use href="#i-logout"></use></svg><span>Wyloguj się</span>
+          <svg class="icon"><use href="#i-logout"></use></svg><span>Sign out</span>
         </button>
       </div>
     </header>
 
     <section id="settingsPanel" class="settings-panel" hidden>
-      <h2>Ustawienia</h2>
+      <h2>Settings</h2>
       <div class="settings-grid">
         <section>
-          <h3>Miejsce na dane</h3>
+          <h3>Storage</h3>
           <div class="meter"><span id="settingsMeter"></span></div>
           <p id="settingsUsage"></p>
         </section>
         <section>
-          <h3>Szyfrowanie</h3>
+          <h3>Encryption</h3>
           <p>AES-GCM 256 · Argon2id · HKDF-SHA256</p>
-          <p class="muted">Klucz główny żyje wyłącznie w pamięci tej karty.</p>
+          <p class="muted">The master key lives only in this tab's memory.</p>
         </section>
       </div>
     </section>
@@ -202,52 +199,52 @@
     <div class="location-row">
       <div class="search-box">
         <svg class="icon"><use href="#i-search"></use></svg>
-        <input id="searchInput" type="search" placeholder="Szukaj na SkyVault" autocomplete="off">
+        <input id="searchInput" type="search" placeholder="Search SkyVault" autocomplete="off">
       </div>
-      <nav class="breadcrumbs" id="breadcrumbs" aria-label="Ścieżka"></nav>
+      <nav class="breadcrumbs" id="breadcrumbs" aria-label="Path"></nav>
     </div>
 
     <section class="files-panel">
       <div class="filters" id="filters">
         <label id="typeFilterLabel">
-          <span>Typ elementu</span>
+          <span>Item type</span>
           <select id="typeFilter">
-            <option value="all">Wszystkie</option>
-            <option value="folder">Foldery</option>
-            <option value="file">Pliki</option>
+            <option value="all">All</option>
+            <option value="folder">Folders</option>
+            <option value="file">Files</option>
           </select>
         </label>
         <label>
-          <span>Sortuj</span>
+          <span>Sort</span>
           <select id="sortSelect">
-            <option value="name-asc">Nazwa: A–Z</option>
-            <option value="name-desc">Nazwa: Z–A</option>
-            <option value="modified-desc">Data: najnowsze</option>
-            <option value="modified-asc">Data: najstarsze</option>
-            <option value="size-desc">Rozmiar: największe</option>
-            <option value="size-asc">Rozmiar: najmniejsze</option>
+            <option value="name-asc">Name: A-Z</option>
+            <option value="name-desc">Name: Z-A</option>
+            <option value="modified-desc">Date: newest</option>
+            <option value="modified-asc">Date: oldest</option>
+            <option value="size-desc">Size: largest</option>
+            <option value="size-asc">Size: smallest</option>
           </select>
         </label>
       </div>
 
       <div class="section-head" id="sectionHead">
         <div class="file-actions">
-          <span id="fileCount" class="file-count">0 elementów</span>
+          <span id="fileCount" class="file-count">0 items</span>
           <div class="file-actions-right">
-            <button class="tool-button" id="newFolderButton" type="button" title="Nowy folder">
+            <button class="tool-button" id="newFolderButton" type="button" title="New folder">
               <svg class="icon"><use href="#i-folder"></use></svg>
             </button>
-            <button class="tool-button" id="uploadButton" type="button" title="Prześlij pliki">
+            <button class="tool-button" id="uploadButton" type="button" title="Upload files">
               <svg class="icon"><use href="#i-upload"></use></svg>
             </button>
-            <button class="tool-button" id="emptyTrashButton" type="button" title="Opróżnij kosz" hidden>
+            <button class="tool-button" id="emptyTrashButton" type="button" title="Empty trash" hidden>
               <svg class="icon"><use href="#i-trash"></use></svg>
             </button>
-            <div class="view-switch" role="group" aria-label="Widok">
-              <button class="view-button active" type="button" data-view-mode="list" title="Lista">
+            <div class="view-switch" role="group" aria-label="View">
+              <button class="view-button active" type="button" data-view-mode="list" title="List">
                 <svg class="icon"><use href="#i-list"></use></svg>
               </button>
-              <button class="view-button" type="button" data-view-mode="grid" title="Ikony">
+              <button class="view-button" type="button" data-view-mode="grid" title="Grid">
                 <svg class="icon"><use href="#i-grid"></use></svg>
               </button>
             </div>
@@ -266,11 +263,10 @@
 <input id="fileInput" type="file" multiple hidden>
 <input id="folderInput" type="file" webkitdirectory directory multiple hidden>
 
-<!-- ============================ POSTĘP UPLOADU ============================ -->
 <aside id="uploadToast" class="upload-toast" hidden aria-live="polite">
   <div class="upload-head">
-    <strong id="uploadTitle">Przesyłanie</strong>
-    <button class="icon-button" id="uploadClose" type="button" aria-label="Zamknij">
+    <strong id="uploadTitle">Uploading</strong>
+    <button class="icon-button" id="uploadClose" type="button" aria-label="Close">
       <svg class="icon"><use href="#i-close"></use></svg>
     </button>
   </div>
@@ -279,17 +275,15 @@
   <div id="uploadQueue" class="upload-queue"></div>
 </aside>
 
-<!-- ============================ MENU KONTEKSTOWE ============================ -->
 <div id="contextMenu" class="context-menu" hidden role="menu"></div>
 
-<!-- ============================ MODAL ============================ -->
 <div id="modal" class="modal" hidden>
   <form id="modalForm" class="modal-panel" role="dialog" aria-modal="true">
     <h2 id="modalTitle">SkyVault</h2>
     <p id="modalMessage"></p>
     <input id="modalInput" type="text" autocomplete="off" hidden>
     <div class="modal-actions">
-      <button type="button" id="modalCancel">Anuluj</button>
+      <button type="button" id="modalCancel">Cancel</button>
       <button type="submit" id="modalOk" class="primary">OK</button>
     </div>
   </form>
@@ -297,7 +291,7 @@
 
 <div id="infoModal" class="modal" hidden>
   <div class="modal-panel" role="dialog" aria-modal="true">
-    <h2>Informacje</h2>
+    <h2>Details</h2>
     <dl id="infoList" class="info-list"></dl>
     <div class="modal-actions">
       <button type="button" class="primary" data-close-modal>OK</button>
@@ -309,12 +303,12 @@
   <div class="modal-panel about-panel" role="dialog" aria-modal="true">
     <span class="brand-mark large">SV</span>
     <h2>SkyVault</h2>
-    <p class="muted">Prywatna chmura plików z szyfrowaniem Zero-Knowledge.</p>
+    <p class="muted">Private file cloud with Zero-Knowledge encryption.</p>
     <dl class="info-list">
-      <dt>Wersja</dt><dd>0.1.0</dd>
-      <dt>Kryptografia</dt><dd>AES-GCM · Argon2id · HKDF-SHA256</dd>
-      <dt>Serwer</dt><dd>Spring Boot · PostgreSQL</dd>
-      <dt>Skróty</dt><dd>Ctrl+F szukaj · F2 zmień nazwę · Delete do kosza · Enter otwórz</dd>
+      <dt>Version</dt><dd>0.1.0</dd>
+      <dt>Cryptography</dt><dd>AES-GCM · Argon2id · HKDF-SHA256</dd>
+      <dt>Server</dt><dd>Spring Boot · PostgreSQL</dd>
+      <dt>Shortcuts</dt><dd>Ctrl+F search · F2 rename · Delete to trash · Enter open</dd>
     </dl>
     <div class="modal-actions">
       <button type="button" class="primary" data-close-modal>OK</button>
@@ -326,10 +320,10 @@
   <div class="modal-panel preview-panel" role="dialog" aria-modal="true">
     <header class="preview-head">
       <div>
-        <p class="eyebrow">Podgląd</p>
+        <p class="eyebrow">Preview</p>
         <h2 id="previewTitle"></h2>
       </div>
-      <button class="icon-button" type="button" data-close-modal aria-label="Zamknij">
+      <button class="icon-button" type="button" data-close-modal aria-label="Close">
         <svg class="icon"><use href="#i-close"></use></svg>
       </button>
     </header>

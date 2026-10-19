@@ -13,17 +13,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/**
- * Operacje na metadanych plików.
- *
- * <p>Serwis nie wie, co jest w plikach ani jak się nazywają. Operuje wyłącznie na
- * skrótach ścieżek ({@code pathHash}) i zaszyfrowanych ścieżkach. Każda operacja jest
- * ograniczona do właściciela — {@code userId} pochodzi z sesji, nigdy z żądania.
- */
 @Service
 public class FileService {
 
-    /** HMAC-SHA256 w postaci hex — 64 znaki. */
     private static final Pattern PATH_HASH_PATTERN = Pattern.compile("^[a-f0-9]{64}$");
 
     private final StoredFileRepository fileRepository;
@@ -38,8 +30,6 @@ public class FileService {
         this.storageService = storageService;
     }
 
-    // --- Tworzenie ---
-
     @Transactional
     public StoredFile createFile(Long userId,
                                  String pathHash,
@@ -50,10 +40,10 @@ public class FileService {
         validateMetadata(pathHash, encryptedVirtualPath, virtualPathIv);
 
         if (blob == null || blob.isEmpty()) {
-            throw ApiException.badRequest("Brak zawartosci pliku");
+            throw ApiException.badRequest("Missing file content");
         }
         if (fileRepository.existsByUserIdAndPathHashAndInTrashFalse(userId, pathHash)) {
-            throw ApiException.conflict("Plik o tej sciezce juz istnieje");
+            throw ApiException.conflict("A file at this path already exists");
         }
 
         long plaintextSize = Math.max(0, sizeBytes);
@@ -65,7 +55,7 @@ public class FileService {
         } catch (IOException exception) {
             releaseQuota(userId, plaintextSize);
             throw new ApiException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Nie udalo sie zapisac pliku");
+                    "Failed to save the file");
         }
 
         try {
@@ -94,15 +84,13 @@ public class FileService {
         validateMetadata(pathHash, encryptedVirtualPath, virtualPathIv);
 
         if (fileRepository.existsByUserIdAndPathHashAndInTrashFalse(userId, pathHash)) {
-            throw ApiException.conflict("Element o tej sciezce juz istnieje");
+            throw ApiException.conflict("An item at this path already exists");
         }
 
         StoredFile folder = new StoredFile(
                 userId, pathHash, encryptedVirtualPath, virtualPathIv, null, 0, 0, true);
         return fileRepository.save(folder);
     }
-
-    // --- Odczyt ---
 
     @Transactional(readOnly = true)
     public List<StoredFile> listActive(Long userId) {
@@ -118,28 +106,26 @@ public class FileService {
     public StoredFile require(Long userId, String pathHash) {
         validatePathHash(pathHash);
         return fileRepository.findByUserIdAndPathHashAndInTrashFalse(userId, pathHash)
-                .orElseThrow(() -> ApiException.notFound("Nie znaleziono pliku"));
+                .orElseThrow(() -> ApiException.notFound("File not found"));
     }
 
     @Transactional(readOnly = true)
     public Path contentPath(Long userId, String pathHash) {
         StoredFile file = require(userId, pathHash);
         if (file.isFolder() || file.getBlobId() == null) {
-            throw ApiException.badRequest("To nie jest plik");
+            throw ApiException.badRequest("This is not a file");
         }
 
         try {
             Path path = storageService.locate(userId, file.getBlobId());
             if (!Files.exists(path)) {
-                throw ApiException.notFound("Zawartosc pliku nie istnieje");
+                throw ApiException.notFound("File content does not exist");
             }
             return path;
         } catch (IllegalArgumentException exception) {
-            throw ApiException.notFound("Zawartosc pliku nie istnieje");
+            throw ApiException.notFound("File content does not exist");
         }
     }
-
-    // --- Modyfikacje ---
 
     @Transactional
     public StoredFile move(Long userId,
@@ -152,7 +138,7 @@ public class FileService {
 
         if (!pathHash.equals(newPathHash)
                 && fileRepository.existsByUserIdAndPathHashAndInTrashFalse(userId, newPathHash)) {
-            throw ApiException.conflict("Element o tej sciezce juz istnieje");
+            throw ApiException.conflict("An item at this path already exists");
         }
 
         file.renameTo(newPathHash, newEncryptedPath, newIv);
@@ -173,13 +159,13 @@ public class FileService {
                         .stream()
                         .filter(candidate -> pathHash.equals(candidate.getPathHash()))
                         .findFirst()
-                        .orElseThrow(() -> ApiException.notFound("Nie znaleziono elementu w koszu")));
+                        .orElseThrow(() -> ApiException.notFound("Item not found in trash")));
 
         if (!file.isInTrash()) {
             return file;
         }
         if (fileRepository.existsByUserIdAndPathHashAndInTrashFalse(userId, pathHash)) {
-            throw ApiException.conflict("Na tej sciezce istnieje juz inny element");
+            throw ApiException.conflict("Another item already exists at this path");
         }
 
         file.restoreFromTrash();
@@ -193,10 +179,6 @@ public class FileService {
         return file;
     }
 
-    /**
-     * Usuwa plik trwale — razem z blobem. Operacja nieodwracalna, dlatego dostępna
-     * tylko dla elementów znajdujących się w koszu.
-     */
     @Transactional
     public void deletePermanently(Long userId, String pathHash) {
         validatePathHash(pathHash);
@@ -206,10 +188,10 @@ public class FileService {
                         .stream()
                         .filter(candidate -> pathHash.equals(candidate.getPathHash()))
                         .findFirst())
-                .orElseThrow(() -> ApiException.notFound("Nie znaleziono pliku"));
+                .orElseThrow(() -> ApiException.notFound("File not found"));
 
         if (!file.isInTrash()) {
-            throw ApiException.conflict("Najpierw przenies element do kosza");
+            throw ApiException.conflict("Move the item to the trash first");
         }
 
         if (file.getBlobId() != null) {
@@ -219,31 +201,29 @@ public class FileService {
         releaseQuota(userId, file.getSizeBytes());
     }
 
-    // --- Pomocnicze ---
-
     private void validateMetadata(String pathHash, String encryptedVirtualPath, String virtualPathIv) {
         validatePathHash(pathHash);
         if (encryptedVirtualPath == null || encryptedVirtualPath.isBlank()
                 || encryptedVirtualPath.length() > 4096) {
-            throw ApiException.badRequest("Brak zaszyfrowanej sciezki");
+            throw ApiException.badRequest("Missing encrypted path");
         }
         if (virtualPathIv == null || virtualPathIv.isBlank() || virtualPathIv.length() > 64) {
-            throw ApiException.badRequest("Brak wektora inicjalizujacego sciezki");
+            throw ApiException.badRequest("Missing path initialization vector");
         }
     }
 
     private void validatePathHash(String pathHash) {
         if (pathHash == null || !PATH_HASH_PATTERN.matcher(pathHash).matches()) {
-            throw ApiException.badRequest("Nieprawidlowy skrot sciezki");
+            throw ApiException.badRequest("Invalid path hash");
         }
     }
 
     private void reserveQuota(Long userId, long bytes) {
         AppUser user = userRepository.findById(userId)
-                .orElseThrow(() -> ApiException.unauthorized("Sesja wygasla"));
+                .orElseThrow(() -> ApiException.unauthorized("Session expired"));
 
         if (user.getUsedBytes() + bytes > user.getQuotaBytes()) {
-            throw ApiException.payloadTooLarge("Przekroczono limit miejsca na koncie");
+            throw ApiException.payloadTooLarge("Account storage limit exceeded");
         }
         user.addUsedBytes(bytes);
         userRepository.save(user);

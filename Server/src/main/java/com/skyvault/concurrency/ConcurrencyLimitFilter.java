@@ -13,15 +13,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-/**
- * Filtr pilnujący limitu współbieżności.
- *
- * <p>Działa na każdym żądaniu do <b>/api/**</b>. Żądania po pliki statyczne (HTML, CSS, JS)
- * nie są liczone, żeby samo wczytanie strony nie zużywało miejsca użytkownika.
- *
- * <p>Endpointy <b>/actuator/**</b> są pomijane, aby monitoring działał również wtedy,
- * gdy serwer jest całkowicie zajęty.
- */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class ConcurrencyLimitFilter extends OncePerRequestFilter {
@@ -51,7 +42,7 @@ public class ConcurrencyLimitFilter extends OncePerRequestFilter {
             response.getWriter().write("""
                     {"status":429,\
                     "error":"Too Many Requests",\
-                    "message":"Serwer obsluguje juz maksymalnie %d uzytkownikow. Sprobuj ponownie za chwile.",\
+                    "message":"The server is already handling the maximum of %d users. Try again in a moment.",\
                     "maxConcurrentUsers":%d}""".formatted(limiter.max(), limiter.max()));
             return;
         }

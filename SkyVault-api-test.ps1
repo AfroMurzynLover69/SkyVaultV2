@@ -1,12 +1,4 @@
 #requires -Version 5.1
-<#
-    Test przepĹ‚ywu API SkyVault (Zero-Knowledge).
-
-    Sprawdza cala sciezke: rejestracja -> sesja -> upload -> listowanie ->
-    pobranie -> kosz -> przywrocenie -> usuniecie -> wylogowanie.
-
-    Uzywa curl.exe (dostepny w Windows 10/11) i pliku cookies.
-#>
 
 $ErrorActionPreference = 'Stop'
 $BaseUrl = if ($env:SKYVAULT_BASE_URL) { $env:SKYVAULT_BASE_URL } else { 'http://127.0.0.1:8080' }
@@ -33,10 +25,6 @@ function New-Hex([int]$Count) {
     return ((New-RandomBytes $Count) | ForEach-Object { $_.ToString('x2') }) -join ''
 }
 
-<#
-    Wykonuje zadanie HTTP i zwraca status oraz tresc.
-    JSON jest podawany przez plik, zeby nie walczyc z cudzyslowami w PowerShellu.
-#>
 function Invoke-Api {
     param(
         [string]$Method,
@@ -76,7 +64,7 @@ function Assert-Equal {
     if ("$Actual" -eq "$Expected") {
         Write-Host ("  [OK]   {0} = {1}" -f $Name, $Actual) -ForegroundColor Green
     } else {
-        Write-Host ("  [FAIL] {0}: oczekiwano {1}, otrzymano {2}" -f $Name, $Expected, $Actual) -ForegroundColor Red
+        Write-Host ("  [FAIL] {0}: expected {1}, got {2}" -f $Name, $Expected, $Actual) -ForegroundColor Red
         $script:Failures++
     }
 }
@@ -91,18 +79,16 @@ function Assert-True {
     }
 }
 
-Write-Host "`n=== SkyVault: test API Zero-Knowledge ===`n" -ForegroundColor Cyan
+Write-Host "`n=== SkyVault: Zero-Knowledge API test ===`n" -ForegroundColor Cyan
 
-# --- 1. Status serwera ---
-Write-Host "1. Status serwera"
+Write-Host "1. Server status"
 $status = Invoke-Api -Method 'GET' -Path '/api/status'
 Assert-Equal 'HTTP' $status.Status 200
 $statusJson = $status.Body | ConvertFrom-Json
-Assert-Equal 'limit wspolbieznosci' $statusJson.maxConcurrentUsers 256
+Assert-Equal 'concurrency limit' $statusJson.maxConcurrentUsers 256
 Write-Host ("  " + ($statusJson | ConvertTo-Json -Compress))
 
-# --- 2. Rejestracja ---
-Write-Host "`n2. Rejestracja (pakiet kryptograficzny)"
+Write-Host "`n2. Registration (crypto bundle)"
 $email = "test-$(New-Hex 4)@example.com"
 $authVerifier = New-Base64 32
 $passwordSalt = New-Base64 16
@@ -121,43 +107,39 @@ $register = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $register
 Assert-Equal 'HTTP' $register.Status 200
 $registerJson = $register.Body | ConvertFrom-Json
 Assert-Equal 'email' $registerJson.email $email
-Assert-True 'sesja otwarta od razu' ($registerJson.userId -gt 0)
+Assert-True 'session opened immediately' ($registerJson.userId -gt 0)
 
-# --- 3. Sesja po rejestracji ---
-Write-Host "`n3. Sesja po rejestracji"
+Write-Host "`n3. Session after registration"
 $me = Invoke-Api -Method 'GET' -Path '/api/auth/me'
-Assert-Equal 'sesja /api/auth/me' $me.Status 200
+Assert-Equal 'session /api/auth/me' $me.Status 200
 $meJson = $me.Body | ConvertFrom-Json
-Assert-Equal 'konto' $meJson.email $email
+Assert-Equal 'account' $meJson.email $email
 
 $duplicate = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $registerBody
-Assert-Equal 'duplikat konta odrzucony' $duplicate.Status 409
+Assert-Equal 'duplicate account rejected' $duplicate.Status 409
 
-# --- 4. Kontrola pakietu kryptograficznego ---
-Write-Host "`n4. Walidacja pakietu kryptograficznego"
+Write-Host "`n4. Crypto bundle validation"
 $badBody = @{
     email              = "bad-$(New-Hex 4)@example.com"
-    authVerifier       = New-Base64 16      # zly rozmiar - ma byc 32 B
+    authVerifier       = New-Base64 16
     passwordSalt       = $passwordSalt
     wrappedMasterKey   = $wrappedKey
     wrappedMasterKeyIv = $wrappedIv
 } | ConvertTo-Json
 $bad = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $badBody
-Assert-Equal 'odrzucony zly weryfikator' $bad.Status 400
+Assert-Equal 'bad verifier rejected' $bad.Status 400
 
-# --- 5. Material kryptograficzny ---
-Write-Host "`n5. Material kryptograficzny"
+Write-Host "`n5. Crypto material"
 $crypto = Invoke-Api -Method 'GET' -Path "/api/auth/crypto?email=$email"
 Assert-Equal 'HTTP' $crypto.Status 200
 $cryptoJson = $crypto.Body | ConvertFrom-Json
-Assert-Equal 'sol' $cryptoJson.passwordSalt $passwordSalt
-Assert-Equal 'zapakowany klucz' $cryptoJson.wrappedMasterKey $wrappedKey
+Assert-Equal 'salt' $cryptoJson.passwordSalt $passwordSalt
+Assert-Equal 'wrapped key' $cryptoJson.wrappedMasterKey $wrappedKey
 
-$unknown = Invoke-Api -Method 'GET' -Path '/api/auth/crypto?email=nieistnieje@example.com'
-Assert-Equal 'nieistniejacy adres nie zdradza sie' $unknown.Status 200
+$unknown = Invoke-Api -Method 'GET' -Path '/api/auth/crypto?email=missing@example.com'
+Assert-Equal 'unknown address does not reveal itself' $unknown.Status 200
 
-# --- 6. Upload pliku ---
-Write-Host "`n6. Upload zaszyfrowanego pliku"
+Write-Host "`n6. Encrypted file upload"
 $blob = New-RandomBytes 4096
 [System.IO.File]::WriteAllBytes($BlobFile, $blob)
 $pathHash = New-Hex 32
@@ -173,54 +155,48 @@ $upload = Invoke-Api -Method 'POST' -Path '/api/files' -Form @(
 )
 Assert-Equal 'HTTP' $upload.Status 200
 
-# --- 7. Listowanie ---
-Write-Host "`n7. Listowanie plikow"
+Write-Host "`n7. File listing"
 $list = Invoke-Api -Method 'GET' -Path '/api/files'
 Assert-Equal 'HTTP' $list.Status 200
 $listJson = @($list.Body | ConvertFrom-Json | ForEach-Object { $_ })
-Assert-Equal 'liczba plikow' $listJson.Count 1
-Assert-Equal 'skrot sciezki' $listJson[0].pathHash $pathHash
-Assert-True 'brak jawnej sciezki w odpowiedzi' (-not ($listJson[0].PSObject.Properties.Name -contains 'virtualPath'))
+Assert-Equal 'file count' $listJson.Count 1
+Assert-Equal 'path hash' $listJson[0].pathHash $pathHash
+Assert-True 'no plaintext path in the response' (-not ($listJson[0].PSObject.Properties.Name -contains 'virtualPath'))
 
-# --- 8. Pobranie ---
-Write-Host "`n8. Pobranie zawartosci"
+Write-Host "`n8. Content download"
 $download = Invoke-Api -Method 'GET' -Path "/api/files/$pathHash/content"
 Assert-Equal 'HTTP' $download.Status 200
 
-# --- 9. Kosz ---
-Write-Host "`n9. Kosz, przywrocenie, usuniecie"
+Write-Host "`n9. Trash, restore, delete"
 $trash = Invoke-Api -Method 'POST' -Path "/api/files/$pathHash/trash"
-Assert-Equal 'przeniesienie do kosza' $trash.Status 200
+Assert-Equal 'move to trash' $trash.Status 200
 $trashList = Invoke-Api -Method 'GET' -Path '/api/files/trash'
 $trashJson = @($trashList.Body | ConvertFrom-Json | ForEach-Object { $_ })
-Assert-Equal 'elementow w koszu' $trashJson.Count 1
+Assert-Equal 'items in trash' $trashJson.Count 1
 
 $restore = Invoke-Api -Method 'POST' -Path "/api/files/$pathHash/restore"
-Assert-Equal 'przywrocenie' $restore.Status 200
+Assert-Equal 'restore' $restore.Status 200
 
 $trashAgain = Invoke-Api -Method 'POST' -Path "/api/files/$pathHash/trash"
-Assert-Equal 'ponowny kosz' $trashAgain.Status 200
+Assert-Equal 'trash again' $trashAgain.Status 200
 $delete = Invoke-Api -Method 'DELETE' -Path "/api/files/$pathHash"
-Assert-Equal 'trwale usuniecie' $delete.Status 204
+Assert-Equal 'permanent delete' $delete.Status 204
 
 $afterDelete = Invoke-Api -Method 'GET' -Path '/api/files'
 $afterJson = @($afterDelete.Body | ConvertFrom-Json | ForEach-Object { $_ })
-Assert-Equal 'plikow po usunieciu' $afterJson.Count 0
+Assert-Equal 'files after delete' $afterJson.Count 0
 
-# --- 10. Kontrola dostepu ---
-Write-Host "`n10. Kontrola dostepu"
+Write-Host "`n10. Access control"
 $logout = Invoke-Api -Method 'POST' -Path '/api/auth/logout'
-Assert-Equal 'wylogowanie' $logout.Status 204
+Assert-Equal 'logout' $logout.Status 204
 $afterLogout = Invoke-Api -Method 'GET' -Path '/api/files'
-Assert-Equal 'brak dostepu bez sesji' $afterLogout.Status 401
+Assert-Equal 'no access without a session' $afterLogout.Status 401
 
-# --- Podsumowanie ---
 Write-Host ""
 if ($script:Failures -eq 0) {
-    Write-Host "WSZYSTKIE TESTY PRZESZLY" -ForegroundColor Green
+    Write-Host "ALL TESTS PASSED" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host ("BLEDY: {0}" -f $script:Failures) -ForegroundColor Red
+    Write-Host ("FAILURES: {0}" -f $script:Failures) -ForegroundColor Red
     exit 1
 }
-

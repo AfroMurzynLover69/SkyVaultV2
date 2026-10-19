@@ -5,12 +5,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
-/**
- * Pilnuje, żeby endpointy wymagające logowania nie były dostępne bez sesji.
- *
- * <p>Identyfikator użytkownika trafia do atrybutu żądania
- * ({@link SessionService#REQUEST_ATTRIBUTE}), skąd odczytują go kontrolery.
- */
 @Component
 public class AuthInterceptor implements HandlerInterceptor {
 
@@ -33,9 +27,8 @@ public class AuthInterceptor implements HandlerInterceptor {
                     try {
                         response.getWriter().write(
                                 "{\"status\":401,\"error\":\"Unauthorized\","
-                                        + "\"message\":\"Wymagane zalogowanie\"}");
+                                        + "\"message\":\"Login required\"}");
                     } catch (java.io.IOException exception) {
-                        // klient rozłączył się - nie ma komu odpowiedzieć
                     }
                     return false;
                 });

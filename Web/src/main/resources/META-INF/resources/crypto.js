@@ -1,22 +1,3 @@
-/*
- * SkyVault — kryptografia po stronie klienta.
- *
- * Cały ten plik wykonuje się w przeglądarce. Serwer nigdy nie widzi hasła,
- * klucza głównego ani jawnych nazw plików.
- *
- * Schemat (przeniesiony ze starego projektu SkyVault):
- *
- *   hasło
- *     → Argon2id(sól 16 B, 256 MB)        = seed 32 B
- *     → HKDF-SHA256("AuthVerifier")       = authVerifier 32 B  → serwer dostaje SHA-256
- *     → HKDF-SHA256("MasterKey KEK")      = KEK 32 B
- *   masterKey 32 B (losowy)
- *     → AES-GCM(KEK, iv 12 B)             = wrappedMasterKey 48 B
- *
- * Plik:  "SKYVAULT-AESGCM-v1\n" || IV (12 B) || AES-GCM(masterKey, treść)
- * Ścieżka: AES-GCM(masterKey, ścieżka), IV osobno w metadanych
- * Skrót ścieżki: HMAC-SHA256(masterKey, "SkyVault path v1:" + ścieżka), hex
- */
 (function () {
   'use strict';
 
@@ -30,8 +11,6 @@
 
   const MASTER_KEY_STORAGE = 'skyvaultMasterKey';
   const EMAIL_STORAGE = 'skyvaultEmail';
-
-  // --- Kodowanie ---
 
   function toBase64(bytes) {
     let binary = '';
@@ -81,11 +60,9 @@
     return true;
   }
 
-  // --- Klucze z hasła ---
-
   async function ensureSodium() {
     if (!window.sodium) {
-      throw new Error('Biblioteka kryptograficzna nie została wczytana.');
+      throw new Error('The cryptography library was not loaded.');
     }
     await window.sodium.ready;
     return window.sodium;
@@ -134,8 +111,6 @@
     return new Uint8Array(plaintext);
   }
 
-  // --- Klucz główny w tej sesji ---
-
   function storeMasterKey(email, masterKey) {
     sessionStorage.setItem(MASTER_KEY_STORAGE, toBase64(masterKey));
     sessionStorage.setItem(EMAIL_STORAGE, email);
@@ -158,12 +133,10 @@
   async function vaultKey(usages) {
     const masterKey = loadMasterKey();
     if (!masterKey) {
-      throw new Error('Brak klucza w tej sesji. Zaloguj się ponownie.');
+      throw new Error('No key in this session. Sign in again.');
     }
     return crypto.subtle.importKey('raw', masterKey, 'AES-GCM', false, usages);
   }
-
-  // --- Pliki ---
 
   async function encryptBlob(arrayBuffer) {
     const key = await vaultKey(['encrypt']);
@@ -186,14 +159,11 @@
         { name: 'AES-GCM', iv: iv }, key, ciphertext));
     }
 
-    // Zgodność z plikami zapisanymi w formacie "IV || szyfrogram".
     const iv = bytes.slice(0, 12);
     const ciphertext = bytes.slice(12);
     return new Uint8Array(await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: iv }, key, ciphertext));
   }
-
-  // --- Ścieżki ---
 
   async function encryptPath(path) {
     const key = await vaultKey(['encrypt']);
@@ -220,7 +190,7 @@
   async function pathHash(path) {
     const masterKey = loadMasterKey();
     if (!masterKey) {
-      throw new Error('Brak klucza w tej sesji. Zaloguj się ponownie.');
+      throw new Error('No key in this session. Sign in again.');
     }
     const key = await crypto.subtle.importKey(
       'raw', masterKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -229,17 +199,15 @@
     return toHex(signature);
   }
 
-  // --- Karta odzyskiwania ---
-
   function recoverySheet(email, masterKey) {
     const text = [
-      'SkyVault — karta odzyskiwania',
-      'E-mail: ' + email,
-      'Klucz główny (base64): ' + toBase64(masterKey),
-      'Utworzono: ' + new Date().toISOString(),
+      'SkyVault Recovery card',
+      'Email: ' + email,
+      'Master key (base64): ' + toBase64(masterKey),
+      'Created: ' + new Date().toISOString(),
       '',
-      'Zachowaj ten plik offline. Każdy, kto ma ten klucz, może odszyfrować Twój dysk.',
-      'SkyVault nie potrafi go odzyskać, jeśli zostanie utracony.'
+      'Keep this file offline. Anyone with this key can decrypt your drive.',
+      'SkyVault cannot recover it if it is lost.'
     ].join('\n');
     return new Blob([text], { type: 'text/plain;charset=utf-8' });
   }

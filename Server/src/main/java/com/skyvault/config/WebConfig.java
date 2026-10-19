@@ -5,13 +5,6 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import com.skyvault.session.AuthInterceptor;
 
-/**
- * Rejestracja interceptora sesji.
- *
- * <p>Endpointy publiczne (rejestracja, logowanie, materiał kryptograficzny) nie wymagają
- * sesji — muszą działać przed zalogowaniem. Wszystko, co dotyczy plików użytkownika,
- * jest chronione.
- */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 

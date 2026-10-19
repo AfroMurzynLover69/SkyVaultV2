@@ -12,15 +12,6 @@
 	<artifactId>skyvault-web</artifactId>
 	<packaging>jar</packaging>
 	<name>SkyVault :: Web</name>
-	<description>Warstwa webowa - pliki statyczne (HTML/CSS/JS)</description>
-
-	<!--
-		Ten modul nie ma kodu Java. Zawiera tylko pliki strony w:
-		    src/main/resources/META-INF/resources/
-
-		To katalog, ktory Spring Boot automatycznie wystawia jako pliki statyczne,
-		takze gdy znajduje sie w osobnym pliku JAR na classpath.
-		Dzieki temu serwer serwuje strone bez zadnej dodatkowej konfiguracji.
-	-->
+	<description>Web layer - static files (HTML/CSS/JS)</description>
 
 </project>

@@ -11,18 +11,16 @@
 
 	<artifactId>skyvault-server</artifactId>
 	<name>SkyVault :: Server</name>
-	<description>Serwer aplikacji - REST API, limit wspolbieznosci, baza PostgreSQL</description>
+	<description>Application server - REST API, concurrency limit, PostgreSQL database</description>
 
 	<dependencies>
 
-		<!-- Warstwa webowa (strona) dostarczana jako osobny modul -->
 		<dependency>
 			<groupId>com.skyvault</groupId>
 			<artifactId>skyvault-web</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 
-		<!-- REST API -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
@@ -32,7 +30,6 @@
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
 
-		<!-- Baza danych -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -51,13 +48,11 @@
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Monitoring -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 
-		<!-- Testy -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc-test</artifactId>

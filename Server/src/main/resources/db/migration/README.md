@@ -1,7 +1,7 @@
-Ten katalog zawiera migracje Flyway.
+This directory contains Flyway migrations.
 
-Zasady:
-- Nazwa pliku: V1__opis.sql, V2__opis.sql, V3__opis.sql ...
-- Plików już wykonanych na bazie NIE edytuje się. Każda zmiana to nowy plik z kolejnym numerem.
-- Tabele tworzy wyłącznie Flyway. Hibernate ma ustawione ddl-auto=validate,
-  czyli tylko sprawdza zgodność encji z istniejącym schematem.
+Rules:
+- File name: V1__description.sql, V2__description.sql, V3__description.sql ...
+- Files already executed on the database are NOT edited. Every change is a new file with the next number.
+- Tables are created exclusively by Flyway. Hibernate is set to ddl-auto=validate,
+  so it only checks that entities match the existing schema.

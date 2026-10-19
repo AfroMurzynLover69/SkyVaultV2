@@ -23,14 +23,14 @@ public class ApiExceptionHandler {
         String message = exception.getBindingResult().getFieldErrors().stream()
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .orElse("Nieprawidlowe dane zadania");
+                .orElse("Invalid request data");
         return ResponseEntity.badRequest().body(body(HttpStatus.BAD_REQUEST, message));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleTooLarge(MaxUploadSizeExceededException exception) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(body(HttpStatus.PAYLOAD_TOO_LARGE, "Plik przekracza dozwolony rozmiar"));
+                .body(body(HttpStatus.PAYLOAD_TOO_LARGE, "File exceeds the allowed size"));
     }
 
     private Map<String, Object> body(HttpStatus status, String message) {

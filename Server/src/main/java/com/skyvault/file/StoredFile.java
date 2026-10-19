@@ -9,22 +9,6 @@ import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
 
-/**
- * Metadane pliku przechowywanego w chmurze.
- *
- * <p>Wszystkie pola opisujące plik są <b>zaszyfrowane po stronie klienta</b>:
- * <ul>
- *   <li>{@code encryptedVirtualPath} — pełna ścieżka zaszyfrowana AES-GCM,</li>
- *   <li>{@code pathHash} — HMAC-SHA256 z klucza głównego; deterministyczny, więc służy
- *       do wyszukiwania i wykrywania konfliktów bez znajomości ścieżki,</li>
- *   <li>{@code blobId} — losowa nazwa pliku na dysku.</li>
- * </ul>
- *
- * <p>Serwer zna wyłącznie rozmiary — musi wiedzieć, ile miejsca zająć, ale nie wie,
- * co się w pliku znajduje ani jak się nazywa.
- *
- * <p>Kolumny z jawną ścieżką celowo nie ma.
- */
 @Entity
 @Table(name = "stored_file")
 public class StoredFile {
@@ -70,7 +54,6 @@ public class StoredFile {
     private OffsetDateTime modifiedAt;
 
     protected StoredFile() {
-        // wymagane przez JPA
     }
 
     public StoredFile(Long userId,
@@ -94,7 +77,6 @@ public class StoredFile {
         this.modifiedAt = OffsetDateTime.now();
     }
 
-    /** Podmiana zaszyfrowanej ścieżki przy zmianie nazwy lub przenoszeniu. */
     public void renameTo(String newPathHash, String newEncryptedPath, String newIv) {
         this.pathHash = newPathHash;
         this.encryptedVirtualPath = newEncryptedPath;
