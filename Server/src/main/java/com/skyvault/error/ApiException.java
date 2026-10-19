@@ -2,10 +2,6 @@ package com.skyvault.error;
 
 import org.springframework.http.HttpStatus;
 
-/**
- * Błąd aplikacji z kodem HTTP. Treść wiadomości jest celowo ogólna —
- * nie zdradza, czy podany adres e-mail istnieje.
- */
 public class ApiException extends RuntimeException {
 
     private final HttpStatus status;

@@ -16,7 +16,7 @@
 	<packaging>pom</packaging>
 
 	<name>SkyVault</name>
-	<description>Korzen projektu - agreguje moduly. Uruchamianie przez SkyVault.ps1</description>
+	<description>Project root - aggregates the modules. Started via SkyVault.ps1</description>
 
 	<properties>
 		<java.version>25</java.version>

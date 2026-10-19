@@ -14,12 +14,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 
-/**
- * Podstawowe endpointy API.
- *
- * <p>GET /api/status - stan serwera i licznik współbieżności (dane dla strony i do testów)
- * <p>GET /api/ping   - proste żądanie; parametr delayMs pozwala symulować obciążenie
- */
 @RestController
 @RequestMapping("/api")
 public class StatusController {
@@ -60,8 +54,6 @@ public class StatusController {
         }
         return new PingResponse("pong", OffsetDateTime.now(), delayMs);
     }
-
-    // --- DTO ---
 
     public record StatusResponse(
             String application,

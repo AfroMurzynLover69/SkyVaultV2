@@ -12,10 +12,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Test jednostkowy ogranicznika współbieżności.
- * Nie wymaga bazy ani uruchamiania Springa - działa na samym semaforze.
- */
 class ConcurrencyLimiterTests {
 
     private static final int LIMIT = 16;
@@ -25,13 +21,13 @@ class ConcurrencyLimiterTests {
     }
 
     @Test
-    @DisplayName("Przyjmuje dokladnie tyle zadan, ile wynosi limit")
+    @DisplayName("Accepts exactly as many tasks as the limit")
     void acceptsUpToLimit() {
         ConcurrencyLimiter limiter = newLimiter();
 
         for (int i = 0; i < LIMIT; i++) {
             assertThat(limiter.tryAcquire())
-                    .as("zadanie %d powinno zostac przyjete", i + 1)
+                    .as("task %d should be accepted", i + 1)
                     .isTrue();
         }
 
@@ -40,7 +36,7 @@ class ConcurrencyLimiterTests {
     }
 
     @Test
-    @DisplayName("Odrzuca zadanie ponad limit i liczy odrzucenia")
+    @DisplayName("Rejects a task over the limit and counts rejections")
     void rejectsOverLimit() {
         ConcurrencyLimiter limiter = newLimiter();
 
@@ -53,7 +49,7 @@ class ConcurrencyLimiterTests {
     }
 
     @Test
-    @DisplayName("Zwolnienie miejsca pozwala przyjac kolejne zadanie")
+    @DisplayName("Releasing a slot allows accepting another task")
     void releaseFreesSlot() {
         ConcurrencyLimiter limiter = newLimiter();
 
@@ -69,7 +65,7 @@ class ConcurrencyLimiterTests {
     }
 
     @Test
-    @DisplayName("Nigdy nie przekracza limitu przy 200 rownoleglych zadaniach")
+    @DisplayName("Never exceeds the limit with 200 concurrent tasks")
     void neverExceedsLimitUnderConcurrency() throws InterruptedException {
         ConcurrencyLimiter limiter = newLimiter();
 
@@ -109,11 +105,11 @@ class ConcurrencyLimiterTests {
         assertThat(done.await(30, TimeUnit.SECONDS)).isTrue();
 
         assertThat(observedMax.get())
-                .as("rownolegle zadania nie moga przekroczyc limitu %d", LIMIT)
+                .as("concurrent tasks cannot exceed the limit %d", LIMIT)
                 .isLessThanOrEqualTo(LIMIT);
 
         assertThat(accepted.get())
-                .as("przyjmujemy co najmniej tyle zadan, ile wynosi limit")
+                .as("we accept at least as many tasks as the limit")
                 .isGreaterThanOrEqualTo(LIMIT);
 
         assertThat(limiter.active()).isZero();

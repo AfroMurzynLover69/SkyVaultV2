@@ -18,13 +18,6 @@ import com.skyvault.error.ApiException;
 import com.skyvault.session.SessionService;
 import com.skyvault.user.AppUser;
 
-/**
- * Endpointy protokołu Zero-Knowledge.
- *
- * <p>Klient wykonuje całą kryptografię u siebie: wyprowadza klucz z hasła (Argon2id),
- * pakuje klucz główny i wysyła serwerowi wyłącznie materiał, którego nie da się
- * odwrócić. Serwer nie ma punktu, w którym widziałby hasło lub klucz główny.
- */
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -37,10 +30,6 @@ public class AuthController {
         this.sessionService = sessionService;
     }
 
-    /**
-     * Rejestracja: klient przysyła gotowy pakiet kryptograficzny, serwer tworzy konto
-     * i od razu otwiera sesję. Adres e-mail nie jest weryfikowany.
-     */
     @PostMapping("/register")
     public ResponseEntity<SessionResponse> register(@Valid @RequestBody RegisterRequest request,
                                                     HttpServletResponse response) {
@@ -54,15 +43,11 @@ public class AuthController {
         return withSession(user, response);
     }
 
-    /**
-     * Logowanie: klient przysyła weryfikator wyprowadzony z hasła.
-     * Serwer porównuje jego skrót w czasie stałym.
-     */
     @PostMapping("/login")
     public ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request,
                                                  HttpServletResponse response) {
         AppUser user = authService.authenticate(request.email(), request.authVerifier())
-                .orElseThrow(() -> ApiException.unauthorized("Nieprawidlowy e-mail lub haslo"));
+                .orElseThrow(() -> ApiException.unauthorized("Invalid email or password"));
         return withSession(user, response);
     }
 
@@ -73,12 +58,6 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Materiał potrzebny klientowi, zanim zna hasło: sól Argon2id i zapakowany klucz główny.
-     *
-     * <p>Dla nieistniejącego adresu zwracany jest materiał zastępczy o poprawnym kształcie,
-     * więc odpowiedź nie zdradza, czy konto istnieje.
-     */
     @GetMapping("/crypto")
     public CryptoResponse crypto(@RequestParam("email") String email) {
         AuthService.CryptoMaterial material = authService.cryptoMaterial(email);
@@ -88,12 +67,11 @@ public class AuthController {
                 material.wrappedMasterKeyIv());
     }
 
-    /** Profil zalogowanego użytkownika. */
     @GetMapping("/me")
     public ProfileResponse me(HttpServletRequest request) {
         Long userId = currentUserId(request);
         AppUser user = authService.profile(userId)
-                .orElseThrow(() -> ApiException.unauthorized("Sesja wygasla"));
+                .orElseThrow(() -> ApiException.unauthorized("Session expired"));
         return new ProfileResponse(
                 user.getId(),
                 user.getEmail(),
@@ -113,10 +91,8 @@ public class AuthController {
         if (userId instanceof Long value) {
             return value;
         }
-        throw ApiException.unauthorized("Wymagane zalogowanie");
+        throw ApiException.unauthorized("Login required");
     }
-
-    // --- Kontrakt wejściowy ---
 
     public record RegisterRequest(
             @NotBlank @Size(max = 254) String email,
@@ -130,8 +106,6 @@ public class AuthController {
             @NotBlank @Size(max = 254) String email,
             @NotBlank String authVerifier) {
     }
-
-    // --- Kontrakt wyjściowy ---
 
     public record SessionResponse(Long userId, String email) {
     }

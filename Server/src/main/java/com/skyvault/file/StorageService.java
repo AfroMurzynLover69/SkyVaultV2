@@ -12,13 +12,6 @@ import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/**
- * Przechowywanie zaszyfrowanych blobów na dysku.
- *
- * <p>Serwer zapisuje bajty dokładnie w takiej postaci, w jakiej dostał je od klienta.
- * Nazwa pliku na dysku jest losowym identyfikatorem i nie ma żadnego związku z nazwą
- * widzianą przez użytkownika.
- */
 @Service
 public class StorageService {
 
@@ -31,15 +24,10 @@ public class StorageService {
         try {
             Files.createDirectories(root);
         } catch (IOException exception) {
-            throw new IllegalStateException("Nie mozna utworzyc katalogu na dane: " + root, exception);
+            throw new IllegalStateException("Failed to create the data directory: " + root, exception);
         }
     }
 
-    /**
-     * Zapisuje blob i zwraca jego identyfikator.
-     *
-     * @return liczba zapisanych bajtów
-     */
     public StoredBlob store(Long userId, InputStream data) throws IOException {
         String blobId = UUID.randomUUID().toString().replace("-", "");
         Path directory = userDirectory(userId);
@@ -50,10 +38,9 @@ public class StorageService {
         return new StoredBlob(blobId, written);
     }
 
-    /** Ścieżka do bloba; rzuca wyjątek, jeśli identyfikator jest niepoprawny. */
     public Path locate(Long userId, String blobId) {
         if (blobId == null || !BLOB_ID_PATTERN.matcher(blobId).matches()) {
-            throw new IllegalArgumentException("Nieprawidlowy identyfikator bloba");
+            throw new IllegalArgumentException("Invalid blob ID");
         }
         return userDirectory(userId).resolve(blobId);
     }
@@ -65,7 +52,6 @@ public class StorageService {
         try {
             Files.deleteIfExists(userDirectory(userId).resolve(blobId));
         } catch (IOException exception) {
-            // Blob i tak ma zniknac - brak pliku nie jest bledem krytycznym.
         }
     }
 
@@ -81,7 +67,7 @@ public class StorageService {
     private Path userDirectory(Long userId) {
         Path directory = root.resolve("u" + userId).normalize();
         if (!directory.startsWith(root)) {
-            throw new IllegalArgumentException("Sciezka poza katalogiem danych");
+            throw new IllegalArgumentException("Path outside the data directory");
         }
         return directory;
     }

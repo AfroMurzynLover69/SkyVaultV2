@@ -7,13 +7,6 @@ import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
 
-/**
- * Sesja zalogowanego użytkownika.
- *
- * <p>Klucz główny to <b>skrót SHA-256</b> tokenu z ciasteczka, nie sam token.
- * Dzięki temu wyciek zawartości bazy nie pozwala podszyć się pod użytkownika —
- * z hasha nie da się odtworzyć wartości, którą klient wysyła w ciasteczku.
- */
 @Entity
 @Table(name = "user_session")
 public class UserSession {
@@ -35,7 +28,6 @@ public class UserSession {
     private OffsetDateTime expiresAt;
 
     protected UserSession() {
-        // wymagane przez JPA
     }
 
     public UserSession(String tokenHash, Long userId, OffsetDateTime lastSeenAt, OffsetDateTime expiresAt) {

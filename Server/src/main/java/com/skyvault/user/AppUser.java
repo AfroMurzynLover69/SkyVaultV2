@@ -9,16 +9,6 @@ import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
 
-/**
- * Konto użytkownika.
- *
- * <p><b>Serwer nie zna hasła ani klucza głównego użytkownika.</b> Przechowuje wyłącznie:
- * <ul>
- *   <li>{@code authVerifierHash} — SHA-256 weryfikatora; jednoznaczny z hasłem, ale nieodwracalny,</li>
- *   <li>{@code passwordSalt} — sól Argon2id, jawna, bo klient potrzebuje jej przed logowaniem,</li>
- *   <li>{@code wrappedMasterKey} — klucz główny zaszyfrowany kluczem KEK, którego serwer nie posiada.</li>
- * </ul>
- */
 @Entity
 @Table(name = "app_user")
 public class AppUser {
@@ -52,7 +42,6 @@ public class AppUser {
     private OffsetDateTime createdAt;
 
     protected AppUser() {
-        // wymagane przez JPA
     }
 
     public AppUser(String email,
@@ -70,7 +59,6 @@ public class AppUser {
         this.usedBytes = 0;
     }
 
-    /** Podmiana materiału kryptograficznego przy zmianie hasła. */
     public void replaceCryptoMaterial(String authVerifierHash,
                                       String passwordSalt,
                                       String wrappedMasterKey,

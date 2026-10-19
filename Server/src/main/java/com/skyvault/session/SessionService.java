@@ -15,12 +15,6 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.Optional;
 
-/**
- * Obsługa sesji opartych na ciasteczku.
- *
- * <p>Klient dostaje losowy token (32 B). W bazie leży wyłącznie jego skrót SHA-256,
- * więc odczyt tabeli {@code user_session} nie wystarcza do podszycia się pod użytkownika.
- */
 @Service
 public class SessionService {
 
@@ -38,7 +32,6 @@ public class SessionService {
         this.repository = repository;
     }
 
-    /** Tworzy sesję i zwraca ciasteczko do wysłania klientowi. */
     @Transactional
     public ResponseCookie createSession(Long userId) {
         byte[] raw = new byte[TOKEN_BYTES];
@@ -54,14 +47,13 @@ public class SessionService {
 
         return ResponseCookie.from(COOKIE_NAME, token)
                 .httpOnly(true)
-                .secure(false)          // true po wdrożeniu za HTTPS
+                .secure(false)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(SESSION_LIFETIME)
                 .build();
     }
 
-    /** Zwraca identyfikator użytkownika dla tokenu z ciasteczka (jeśli sesja jest ważna). */
     @Transactional
     public Optional<Long> resolveUserId(HttpServletRequest request) {
         String token = readToken(request);
@@ -84,7 +76,6 @@ public class SessionService {
                 });
     }
 
-    /** Kończy sesję i zwraca ciasteczko do wyczyszczenia. */
     @Transactional
     public ResponseCookie destroySession(HttpServletRequest request) {
         String token = readToken(request);
@@ -109,12 +100,11 @@ public class SessionService {
         repository.deleteByUserId(userId);
     }
 
-    /** Usuwa wygasłe sesje. Wywoływane okresowo. */
     @Transactional
     public int purgeExpired() {
         int removed = repository.deleteExpired(OffsetDateTime.now());
         if (removed > 0) {
-            log.info("Usunieto {} wygaslych sesji", removed);
+            log.info("Removed {} expired sessions", removed);
         }
         return removed;
     }

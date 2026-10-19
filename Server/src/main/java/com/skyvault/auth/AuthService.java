@@ -15,17 +15,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/**
- * Rejestracja i logowanie.
- *
- * <p>Serwer nigdy nie widzi hasła. Widzi tylko weryfikator, z którego i tak liczy
- * SHA-256 przed zapisem. Logowanie polega na porównaniu skrótów w czasie stałym.
- *
- * <p><b>Ochrona przed ujawnieniem kont:</b> endpoint {@code /api/auth/crypto} zwraca
- * poprawny kształtem materiał kryptograficzny także dla nieistniejącego adresu
- * (sól wyliczona z sekretu serwera). Dzięki temu atakujący nie może ustalić, które
- * adresy mają konto, odpytując ten endpoint.
- */
 @Service
 public class AuthService {
 
@@ -49,13 +38,6 @@ public class AuthService {
                 .encodeToString(sha256("skyvault-dummy-verifier".getBytes(StandardCharsets.UTF_8)));
     }
 
-    // --- Rejestracja ---
-
-    /**
-     * Tworzy konto od razu. Klient przysyła gotowy pakiet kryptograficzny:
-     * sól, weryfikator i klucz główny zapakowany KEK. Serwer nie potrafi
-     * odtworzyć z tego ani hasła, ani klucza głównego.
-     */
     @Transactional
     public AppUser register(String rawEmail,
                             String authVerifier,
@@ -65,13 +47,13 @@ public class AuthService {
         String email = normalizeEmail(rawEmail);
 
         if (!isValidEmail(email)) {
-            throw ApiException.badRequest("Nieprawidlowy adres e-mail");
+            throw ApiException.badRequest("Invalid email address");
         }
         if (!CryptoPackage.isValid(authVerifier, passwordSalt, wrappedMasterKey, wrappedMasterKeyIv)) {
-            throw ApiException.badRequest("Nieprawidlowy pakiet kryptograficzny");
+            throw ApiException.badRequest("Invalid crypto package");
         }
         if (userRepository.existsByEmail(email)) {
-            throw ApiException.conflict("Konto z tym adresem juz istnieje");
+            throw ApiException.conflict("An account with this email already exists");
         }
 
         AppUser user = new AppUser(
@@ -85,8 +67,6 @@ public class AuthService {
         return userRepository.save(user);
     }
 
-    // --- Logowanie ---
-
     @Transactional(readOnly = true)
     public Optional<AppUser> authenticate(String rawEmail, String authVerifier) {
         String email = normalizeEmail(rawEmail);
@@ -97,30 +77,17 @@ public class AuthService {
 
         Optional<AppUser> user = userRepository.findByEmail(email);
 
-        // Porownanie wykonujemy zawsze, takze gdy konto nie istnieje - inaczej czas
-        // odpowiedzi zdradzalby, ktore adresy sa zarejestrowane.
         String storedHash = user.map(AppUser::getAuthVerifierHash).orElse(dummyVerifierHash);
         boolean matches = CryptoPackage.verifierMatches(authVerifier, storedHash);
 
         return (matches && user.isPresent()) ? user : Optional.empty();
     }
 
-    // --- Profil ---
-
     @Transactional(readOnly = true)
     public Optional<AppUser> profile(Long userId) {
         return userRepository.findById(userId);
     }
 
-    // --- Material kryptograficzny ---
-
-    /**
-     * Zwraca sól i zapakowany klucz główny.
-     *
-     * <p>Dla nieistniejącego adresu zwraca wartości wyliczone z sekretu serwera —
-     * poprawne kształtem, ale bezużyteczne. Klient nie odróżni ich od prawdziwych,
-     * dopóki nie spróbuje odszyfrować klucza głównego.
-     */
     @Transactional(readOnly = true)
     public CryptoMaterial cryptoMaterial(String rawEmail) {
         String email = normalizeEmail(rawEmail);
@@ -145,8 +112,6 @@ public class AuthService {
                 encoder.encodeToString(slice(fakeIv, CryptoPackage.IV_BYTES)));
     }
 
-    // --- Pomocnicze ---
-
     public static String normalizeEmail(String email) {
         return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
     }
@@ -162,7 +127,7 @@ public class AuthService {
         try {
             return MessageDigest.getInstance("SHA-256").digest(data);
         } catch (Exception exception) {
-            throw new IllegalStateException("Brak algorytmu SHA-256", exception);
+            throw new IllegalStateException("SHA-256 algorithm not available", exception);
         }
     }
 
@@ -172,7 +137,7 @@ public class AuthService {
             mac.init(new javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"));
             return mac.doFinal(data);
         } catch (Exception exception) {
-            throw new IllegalStateException("Brak algorytmu HmacSHA256", exception);
+            throw new IllegalStateException("HmacSHA256 algorithm not available", exception);
         }
     }
 
@@ -188,8 +153,6 @@ public class AuthService {
         System.arraycopy(second, 0, result, first.length, second.length);
         return result;
     }
-
-    // --- Wyniki ---
 
     public record CryptoMaterial(String passwordSalt, String wrappedMasterKey, String wrappedMasterKeyIv) {
     }
