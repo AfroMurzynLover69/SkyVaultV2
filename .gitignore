@@ -1,0 +1,36 @@
+# --- Maven ---
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+
+# --- Java ---
+*.class
+*.jar
+*.war
+hs_err_pid*
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# --- System ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# --- Logi ---
+*.log
+logs/
+
+# --- Sekrety ---
+.env
+*.env
+!.env.example
