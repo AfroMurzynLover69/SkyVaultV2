@@ -1,7 +1,7 @@
 #requires -Version 5.1
 
 $ErrorActionPreference = 'Stop'
-$BaseUrl = if ($env:SKYVAULT_BASE_URL) { $env:SKYVAULT_BASE_URL } else { 'http://127.0.0.1:8080' }
+$BaseUrl = if ($env:SKYVAULT_BASE_URL) { $env:SKYVAULT_BASE_URL } else { 'https://127.0.0.1:8443' }
 $CookieJar = Join-Path $env:TEMP 'skyvault-cookies.txt'
 $JsonFile = Join-Path $env:TEMP 'skyvault-body.json'
 $BlobFile = Join-Path $env:TEMP 'skyvault-blob.bin'
@@ -34,7 +34,7 @@ function Invoke-Api {
     )
 
     $curlArgs = @(
-        '-s', '-S',
+        '-s', '-S', '-k',
         '-X', $Method,
         "$BaseUrl$Path",
         '-c', $CookieJar,

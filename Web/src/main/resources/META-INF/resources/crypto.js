@@ -68,7 +68,14 @@
     return window.sodium;
   }
 
+  function requireWebCrypto() {
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error('This browser blocked Web Crypto. Open SkyVault over HTTPS on port 8443.');
+    }
+  }
+
   async function hkdf(seed, info) {
+    requireWebCrypto();
     const key = await crypto.subtle.importKey('raw', seed, 'HKDF', false, ['deriveBits']);
     const bits = await crypto.subtle.deriveBits({
       name: 'HKDF',
@@ -97,6 +104,7 @@
   }
 
   async function wrapMasterKey(kek, masterKey) {
+    requireWebCrypto();
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await crypto.subtle.importKey('raw', kek, 'AES-GCM', false, ['encrypt']);
     const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
@@ -105,6 +113,7 @@
   }
 
   async function unwrapMasterKey(kek, ciphertext, iv) {
+    requireWebCrypto();
     const key = await crypto.subtle.importKey('raw', kek, 'AES-GCM', false, ['decrypt']);
     const plaintext = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: iv }, key, ciphertext);
@@ -131,6 +140,7 @@
   }
 
   async function vaultKey(usages) {
+    requireWebCrypto();
     const masterKey = loadMasterKey();
     if (!masterKey) {
       throw new Error('No key in this session. Sign in again.');
@@ -188,6 +198,7 @@
   }
 
   async function pathHash(path) {
+    requireWebCrypto();
     const masterKey = loadMasterKey();
     if (!masterKey) {
       throw new Error('No key in this session. Sign in again.');

@@ -104,7 +104,7 @@ plaintext content. That is the Zero-Knowledge boundary; the sections below descr
 | Build | Maven with the `mvnw` wrapper |
 | Frontend | plain HTML, CSS and JavaScript; no framework, no build step |
 | Browser crypto | Web Crypto API (HKDF-SHA256, AES-GCM) + libsodium.js (Argon2id, local copy) |
-| Transport | JSON over HTTP; multipart for encrypted uploads |
+| Transport | JSON over HTTPS (TLS); multipart for encrypted uploads |
 | Tests | JUnit 5 / Spring Boot Test, plus PowerShell API and load scripts |
 
 ## Running
@@ -138,10 +138,22 @@ version by itself. Required: **JDK 25**, **PostgreSQL 18** and a set `JAVA_HOME`
 
 | Address | Description |
 |---|---|
-| `http://localhost:8080/` | SkyVault interface |
-| `http://localhost:8080/api/status` | server status and concurrency counter |
-| `http://localhost:8080/api/ping?delayMs=500` | request with a simulated delay |
-| `http://localhost:8080/actuator/health` | application and database health |
+| `https://localhost:8443/` | SkyVault interface |
+| `https://localhost:8443/api/status` | server status and concurrency counter |
+| `https://localhost:8443/api/ping?delayMs=500` | request with a simulated delay |
+| `https://localhost:8443/actuator/health` | application and database health |
+| `https://<server-ip>:8443/` | the same interface from another computer in the LAN |
+
+The server serves **only HTTPS** (there is no HTTP connector). The development certificate is a
+self-signed PKCS12 file: `Server/src/main/resources/skyvault-dev.p12`, alias `skyvault`,
+password `skyvault`, valid for 10 years. The SAN list contains `localhost`, `127.0.0.1`, `::1`,
+the computer name and the LAN address. The browser shows a certificate warning once — choose
+**Advanced → Proceed**. The page is then a secure context and Web Crypto works, also from
+another computer.
+
+> The certificate is for development only. To use the project outside the LAN, replace it with
+> a certificate from a trusted CA. The password can be overridden with `SSL_KEYSTORE_PASSWORD`,
+> and the port with `PORT`.
 
 ## Zero-Knowledge API
 
@@ -213,7 +225,8 @@ It is deterministic, so the server can search and detect conflicts without knowi
 The HMAC key is different for every user, so the same names cannot be correlated
 across accounts.
 
-Full flow test: `.\SkyVault-api-test.ps1` (the server must be running).
+Full flow test: `.\SkyVault-api-test.ps1` (the server must be running). The script accepts the
+development certificate automatically.
 
 ## Interface (GUI)
 
@@ -255,8 +268,9 @@ session is still valid, but no one can recreate the key without the password. Af
 the client downloads a **recovery card** with the master key; without it, losing the password
 means losing the data.
 
-Web Crypto requires a secure context: `http://localhost` and `http://127.0.0.1`
-work, but LAN access over plain HTTP does not (HTTPS is needed).
+Web Crypto requires a secure context. SkyVault always runs over HTTPS — also on `localhost` —
+so Argon2id, HKDF and AES-GCM work both on the server machine and on another computer in the
+LAN. Plain HTTP is not served at all.
 
 Static resources are served with `Cache-Control: no-store`. Reason: Spring Boot packs
 JAR entries with the date 1980-02-01 (reproducible builds), so the browser would get `304`
@@ -278,7 +292,7 @@ The mechanism has two layers:
 Requests for static files and `/actuator/**` are **not** counted — thanks to that the site
 always loads, and monitoring works even under full load.
 
-Measured with `.\SkyVault-loadtest.ps1 -Requests 640 -DelayMs 3000`: 384 x `200`, 256 x `429`,
+Measured with `.\SkyVault-loadtest.ps1 -Requests 640 -DelayMs 3000`: 427 x `200`, 213 x `429`,
 peak load 256.
 
 Settings in `Server/src/main/resources/application.properties`:
@@ -351,9 +365,10 @@ A separate tool to check the 256 limit on a running server:
 .\SkyVault-loadtest.ps1 -Requests 40 -DelayMs 3000 # quick verification of the 429 path
 ```
 
-The script sends real parallel connections and counts `200` and `429` responses.
-`DelayMs` must be greater than `acquire-timeout-ms` (2000 ms by default) — otherwise the excess
-will wait for a free slot and get `200` instead of `429`.
+The script sends real parallel connections and counts `200` and `429` responses. It accepts the
+development certificate automatically. `DelayMs` must be greater than `acquire-timeout-ms`
+(2000 ms by default) — otherwise the excess will wait for a free slot and get `200` instead
+of `429`.
 
 Why is this not on the site? A browser opens only a few connections at a time to a single
 server, so the 256-slot limit cannot be filled from the browser.

@@ -4,12 +4,35 @@ param(
 
     [int]$DelayMs = 3000,
 
-    [string]$BaseUrl = 'http://localhost:8080'
+    [string]$BaseUrl = 'https://localhost:8443'
 )
 
 $ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Net.Http
+
+Add-Type -TypeDefinition @"
+using System.Net;
+using System.Net.Http;
+using System.Security.Cryptography.X509Certificates;
+
+public static class SkyVaultCertificates
+{
+    public static void AcceptAll()
+    {
+        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+    }
+
+    public static HttpClientHandler Handler()
+    {
+        HttpClientHandler handler = new HttpClientHandler();
+        handler.ServerCertificateCustomValidationCallback = delegate { return true; };
+        return handler;
+    }
+}
+"@ -ReferencedAssemblies 'System.Net.Http'
+
+[SkyVaultCertificates]::AcceptAll()
 
 [System.Net.ServicePointManager]::DefaultConnectionLimit = 1024
 
@@ -30,7 +53,7 @@ Write-Host "  Requests:        $Requests"
 Write-Host "  Delay:           $DelayMs ms"
 Write-Host ''
 
-$client = New-Object System.Net.Http.HttpClient
+$client = New-Object System.Net.Http.HttpClient([SkyVaultCertificates]::Handler())
 $client.Timeout = [TimeSpan]::FromSeconds(120)
 
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
