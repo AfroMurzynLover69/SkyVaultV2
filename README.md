@@ -10,9 +10,9 @@ Promotor: dr inż. Mariusz Ginter
 
 ## Stan projektu
 
-Gotowy jest **szkielet technologiczny** oraz **API Zero-Knowledge**: rejestracja, logowanie,
-sesje i operacje na zaszyfrowanych plikach. Interfejs przeglądania plików
-powstanie na końcu — po ustaleniu pełnego kontraktu API.
+Gotowe są: **szkielet technologiczny**, **API Zero-Knowledge** (rejestracja, logowanie,
+sesje, operacje na zaszyfrowanych plikach) oraz **interfejs przeglądania dysku** —
+w całości w czerni i bieli, w całości szyfrujący dane w przeglądarce.
 
 ## Struktura
 
@@ -24,9 +24,11 @@ SkyVault\
 │
 ├── Web\              ← MODUŁ STRONY
 │   └── src\main\resources\META-INF\resources\
-│       ├── index.html
-│       ├── style.css
-│       └── app.js
+│       ├── index.html          ← szkielet GUI (własny sprite ikon SVG)
+│       ├── style.css           ← motyw czarno-biały, tylko skala szarości
+│       ├── crypto.js           ← Argon2id, HKDF, AES-GCM (WebCrypto + libsodium)
+│       ├── app.js              ← logika SPA: dysk, biblioteki, kosz, upload
+│       └── vendor\             ← libsodium (wersja lokalna, bez CDN)
 │
 └── Server\           ← MODUŁ SERWERA
     └── src\main\
@@ -92,7 +94,7 @@ wersję. Wymagane są: **JDK 25**, **PostgreSQL 18** i ustawiony `JAVA_HOME`.
 
 | Adres | Opis |
 |---|---|
-| `http://localhost:8080/` | strona kontrolna |
+| `http://localhost:8080/` | interfejs SkyVault |
 | `http://localhost:8080/api/status` | stan serwera i licznik współbieżności |
 | `http://localhost:8080/api/ping?delayMs=500` | żądanie z symulowanym opóźnieniem |
 | `http://localhost:8080/actuator/health` | stan aplikacji i bazy |
@@ -119,12 +121,17 @@ zaszyfrowane ścieżki. Kolumny z jawną nazwą pliku **nie ma**.
 Klient wysyła zaszyfrowaną zawartość jako jeden kawałek:
 
 ```
-blob = IV (12 B) || AES-GCM(klucz główny, zawartość) || tag (16 B)
+blob = "SKYVAULT-AESGCM-v1\n" (19 B) || IV (12 B) || AES-GCM(klucz główny, zawartość)
 ```
 
-Dzięki temu IV jest częścią bloba i serwer nie musi go nigdzie zapisywać.
+Nagłówek jednoznacznie identyfikuje format i wersję, więc IV jest częścią bloba
+i serwer nie musi go nigdzie zapisywać. Rozpoznanie wersji nie opiera się na długości
+pliku ani na heurystyce: odszyfrowywanie czyta magiczny nagłówek, a gdy go nie ma,
+wraca do starego układu `IV || szyfrogram` (zgodność wstecz).
+
 `sizeBytes` to rozmiar jawny (przed szyfrowaniem), a `storedSizeBytes` — rozmiar
-tego, co faktycznie dotarło na serwer (przy tej konwencji: `sizeBytes + 28`).
+tego, co faktycznie dotarło na serwer (przy tej konwencji: `sizeBytes + 47`:
+19 B nagłówka + 12 B IV + 16 B tagu AES-GCM).
 
 Ścieżka ma osobne pole `virtualPathIv`, bo jej szyfrogram i IV są zwracane
 klientowi razem z metadanymi.
@@ -163,6 +170,53 @@ Klucz HMAC jest inny dla każdego użytkownika, więc tych samych nazw nie da si
 między kontami.
 
 Pełny test przepływu: `.\SkyVault-api-test.ps1` (serwer musi działać).
+
+## Interfejs (GUI)
+
+Strona jest zwykłym HTML/CSS/JS serwowanym z modułu `Web` — bez frameworka i bez
+procesu budowania frontendu. Układ i mechanika zostały przeniesione ze starego projektu
+(C#/Angular), ale kod i wygląd są nowe: **cała kolorystyka to skala szarości od `#0a0a0a`
+do `#ffffff`**, a ikony to własny sprite SVG (`currentColor`), bez zewnętrznych zestawów.
+
+Widoki:
+
+| Widok | Zawartość |
+|---|---|
+| Strona główna / Mój dysk | foldery i pliki wybranego poziomu, breadcrumbs |
+| Komputery | informacje o bieżącej sesji i zasadzie odblokowywania na urządzeniu |
+| Dokumenty, Obrazy, Filmy, Muzyka | biblioteki filtrowane po rozszerzeniu |
+| Ostatnie | 60 najnowszych plików z całego dysku |
+| Oznaczone gwiazdką | pliki i foldery z gwiazdką |
+| Kosz | przywracanie i trwałe usuwanie |
+| Skydysk | wykorzystanie limitu, największe pliki, narzut szyfrowania |
+
+Mechanika:
+
+- **Przesyłanie** — przyciskiem, przeciągnięciem plików na obszar roboczy albo całym
+  katalogiem (`Prześlij folder` w menu pod prawym przyciskiem). Plik jest szyfrowany
+  w karcie i dopiero potem wysyłany; konflikt nazw rozwiązuje się automatycznie
+  (`notatka (1).txt`).
+- **Pobieranie i podgląd** — pobranie odszyfrowuje blob w przeglądarce. Podgląd obsługuje
+  obrazy, filmy, dźwięk, PDF oraz tekst (`text/plain` i typowe rozszerzenia kodu).
+- **Nazwy i foldery** — zmiana nazwy, przenoszenie (także przeciągnięciem na folder),
+  tworzenie folderów. Folder przenoszony razem z całą zawartością.
+- **Kosz** — przenoszenie, przywracanie i trwałe usuwanie; opróżnianie całości.
+- **Menu kontekstowe** (prawy przycisk myszy) — otwórz/podgląd, pobierz, gwiazdka,
+  zmiana nazwy, przenoszenie, informacje, kosz; na pustym obszarze — nowy folder,
+  przesyłanie plików i katalogu, odświeżenie.
+- **Skróty** — `Ctrl+F` szukaj, `F2` zmiana nazwy, `Delete` do kosza, `Enter` otwórz.
+
+Klucz główny żyje wyłącznie w `sessionStorage` karty: zamknięcie karty zapomina klucz,
+a otwarcie SkyVault w nowej karcie prosi o hasło („odblokuj dysk”) — sesja serwerowa
+nadal obowiązuje, ale klucza nikt nie odtworzy bez hasła. Po rejestracji klient pobiera
+**kartę odzyskiwania** z kluczem głównym; bez niej utrata hasła oznacza utratę danych.
+
+Web Crypto wymaga bezpiecznego kontekstu: `http://localhost` i `http://127.0.0.1`
+działają, ale dostęp przez LAN po zwykłym HTTP — już nie (potrzebny HTTPS).
+
+Zasoby statyczne są serwowane z `Cache-Control: no-store`. Powód: Spring Boot pakuje
+wpisy JAR z datą 1980-02-01 (powtarzalne buildy), więc przeglądarka dostawałaby `304`
+i trzymała stary interfejs po aktualizacji.
 
 ## Limit współbieżności
 
@@ -258,5 +312,5 @@ połączeń naraz, więc z poziomu przeglądarki nie da się zapełnić limitu 2
 
 1. ~~Projekt schematu bazy pod architekturę Zero-Knowledge~~ — gotowy (`V1__init_schema.sql`).
 2. ~~Rejestracja i logowanie~~ — gotowe.
-3. Szyfrowanie po stronie klienta w przeglądarce (AES-GCM, Argon2id, HKDF) i GUI przeglądania.
+3. ~~Szyfrowanie po stronie klienta w przeglądarce (AES-GCM, Argon2id, HKDF) i GUI przeglądania~~ — gotowe (moduł `Web`).
 4. Testy funkcjonalne i ocena działania systemu — wymagane w planie pracy.
