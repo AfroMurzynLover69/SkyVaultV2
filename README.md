@@ -1,316 +1,366 @@
 # SkyVault
 
-Projekt na pracę inżynierską.
+Engineering thesis project.
 
-**Temat:** Implementacja architektury Zero-Knowledge w aplikacji umożliwiającej przechowywanie
-zaszyfrowanych danych w chmurze obliczeniowej.
+**Topic:** Implementation of the Zero-Knowledge architecture in an application that allows storing encrypted data in a computing cloud.
 
-Autor: Patryk Rysiński · Politechnika Świętokrzyska · Teleinformatyka
-Promotor: dr inż. Mariusz Ginter
+Author: Patryk Rysinski · Kielce University of Technology · Teleinformatics
+Supervisor: Mariusz Ginter, PhD
 
-## Stan projektu
+## Project status
 
-Gotowe są: **szkielet technologiczny**, **API Zero-Knowledge** (rejestracja, logowanie,
-sesje, operacje na zaszyfrowanych plikach) oraz **interfejs przeglądania dysku** —
-w całości w czerni i bieli, w całości szyfrujący dane w przeglądarce.
+Completed: the **technology skeleton**, the **Zero-Knowledge API** (registration, login,
+sessions, operations on encrypted files) and the **drive browsing interface** —
+entirely in black and white, encrypting all data in the browser.
 
-## Struktura
+## Structure
 
 ```
 SkyVault\
-├── SkyVault.ps1      ← LAUNCHER. Tylko uruchamianie modułów, bez logiki aplikacji.
-├── SkyVault.cmd      ← to samo co wyżej, do uruchomienia dwuklikiem
-├── pom.xml           ← korzeń projektu (agreguje moduły)
-│
-├── Web\              ← MODUŁ STRONY
-│   └── src\main\resources\META-INF\resources\
-│       ├── index.html          ← szkielet GUI (własny sprite ikon SVG)
-│       ├── style.css           ← motyw czarno-biały, tylko skala szarości
-│       ├── crypto.js           ← Argon2id, HKDF, AES-GCM (WebCrypto + libsodium)
-│       ├── app.js              ← logika SPA: dysk, biblioteki, kosz, upload
-│       └── vendor\             ← libsodium (wersja lokalna, bez CDN)
-│
-└── Server\           ← MODUŁ SERWERA
-    └── src\main\
-        ├── java\com\skyvault\
-        │   ├── ServerApplication.java
-        │   ├── api\          ← /api/status, /api/ping
-        │   ├── auth\         ← rejestracja, logowanie, pakiet kryptograficzny
-        │   ├── file\         ← metadane plików, bloby, kosz
-        │   ├── session\      ← sesje i ochrona endpointów
-        │   ├── user\         ← konto użytkownika
-        │   ├── concurrency\  ← limit 256 współbieżnych żądań
-        │   ├── config\       ← konfiguracja Springa
-        │   └── error\        ← obsługa błędów API
-        └── resources\
-            ├── application.properties
-            └── db\migration\        ← migracje Flyway
+|-- SkyVault.ps1      <- LAUNCHER. Only starts the modules, no application logic.
+|-- SkyVault.cmd      <- same as above, for double-click launch
+|-- pom.xml           <- project root (aggregates the modules)
+|
+|-- Web\              <- WEB MODULE
+|   `-- src\main\resources\META-INF\resources\
+|       |-- index.html          <- GUI skeleton (custom SVG icon sprite)
+|       |-- style.css           <- black and white theme, grayscale only
+|       |-- crypto.js           <- Argon2id, HKDF, AES-GCM (WebCrypto + libsodium)
+|       |-- app.js              <- SPA logic: drive, libraries, trash, upload
+|       `-- vendor\             <- libsodium (local copy, no CDN)
+|
+`-- Server\           <- SERVER MODULE
+    `-- src\main\
+        |-- java\com\skyvault\
+        |   |-- ServerApplication.java
+        |   |-- api\          <- /api/status, /api/ping
+        |   |-- auth\         <- registration, login, crypto bundle
+        |   |-- file\         <- file metadata, blobs, trash
+        |   |-- session\      <- sessions and endpoint protection
+        |   |-- user\         <- user account
+        |   |-- concurrency\  <- limit of 256 concurrent requests
+        |   |-- config\       <- Spring configuration
+        |   `-- error\        <- API error handling
+        `-- resources\
+            |-- application.properties
+            `-- db\migration\        <- Flyway migrations
 ```
 
-**Dlaczego moduły, a nie jeden projekt?** Web to osobny artefakt (JAR z plikami strony).
-Server zależy od Web, więc strona jest serwowana automatycznie — bez kopiowania plików
-i bez osobnego serwera HTTP. Przy okazji zmiana w wyglądzie strony nie wymaga
-przebudowy kodu serwera.
+**Why modules instead of a single project?** Web is a separate artifact (a JAR with the site
+files). Server depends on Web, so the site is served automatically — without copying files
+and without a separate HTTP server. As a bonus, a change in the site's look does not require
+rebuilding the server code.
 
-## Stos technologiczny
+## Architecture
 
-| Element | Wersja |
+Block view of the running system:
+
+```text
+Browser (Web module)
+  index.html + style.css + app.js + crypto.js
+  password -> Argon2id -> seed -> HKDF -> verifier -> SHA-256 -> verifier hash
+                            \-> HKDF -> KEK -> AES-GCM -> wrapped master key
+  master key (sessionStorage) -> AES-GCM -> encrypted blob
+  path -> AES-GCM -> encrypted path;  path -> HMAC-SHA256 -> pathHash (hex)
+        |
+        | HTTPS: ciphertext, hashes and the wrapped key only
+        v
+Server (Server module, Spring Boot)
+  ConcurrencyLimitFilter (256 slots -> HTTP 429) -> AuthInterceptor -> controllers
+  AuthController / FileController -> FileService -> StorageService
+        |
+        +--> PostgreSQL: app_user, user_session, stored_file (hashes, ciphertext)
+        +--> disk: data/files/u{id}/, encrypted blobs (no keys on the server)
+```
+
+The Server block never receives the password, the master key, plaintext file names or
+plaintext content. That is the Zero-Knowledge boundary; the sections below describe each part.
+
+## What each folder does
+
+| Folder / file | Responsibility |
 |---|---|
-| Java | 25 (LTS) |
-| Spring Boot | 4.1.1 |
-| Spring Web MVC, Spring Data JPA, Hibernate | — |
-| PostgreSQL | 18.6 |
-| Flyway | — |
-| Maven (wrapper `mvnw`) | — |
+| `SkyVault/` | repository root: launcher, aggregate `pom.xml`, documentation |
+| `SkyVault.ps1`, `SkyVault.cmd` | launcher only (build / run / test / clean); no application logic |
+| `SkyVault-api-test.ps1` | end-to-end API test against a running server |
+| `SkyVault-loadtest.ps1` | parallel load test that verifies the 256 limit and HTTP 429 |
+| `Web/` | web module: the static interface, packaged as a JAR |
+| `Web/.../META-INF/resources/` | `index.html`, `style.css`, `app.js`, `crypto.js`, `vendor/` (libsodium) |
+| `Server/` | server module: Spring Boot application; depends on Web |
+| `Server/.../com/skyvault/` | backend packages: `api`, `auth`, `file`, `session`, `user`, `concurrency`, `config`, `error` |
+| `Server/.../resources/` | `application.properties` and Flyway migrations (`db/migration`) |
+| `data/` | runtime directory, gitignored: encrypted blobs in `data/files/u{id}/` |
 
-## Uruchamianie
+## Technology stack
+
+| Layer | Technology |
+|---|---|
+| Language | Java 25 (LTS) |
+| Backend | Spring Boot 4.1.1 (Spring Web MVC, Spring Data JPA, Actuator) |
+| Persistence | Hibernate ORM 7.4.5, `ddl-auto=validate` |
+| Database | PostgreSQL 18.6 |
+| Migrations | Flyway (`db/migration`) |
+| Web container | Apache Tomcat 11.0.24 (embedded) |
+| Build | Maven with the `mvnw` wrapper |
+| Frontend | plain HTML, CSS and JavaScript; no framework, no build step |
+| Browser crypto | Web Crypto API (HKDF-SHA256, AES-GCM) + libsodium.js (Argon2id, local copy) |
+| Transport | JSON over HTTP; multipart for encrypted uploads |
+| Tests | JUnit 5 / Spring Boot Test, plus PowerShell API and load scripts |
+
+## Running
 
 ```powershell
 cd C:\Users\PKR\Desktop\KOD\SkyVault
 .\SkyVault.ps1
 ```
 
-Launcher obsługuje tryby:
+The launcher supports these modes:
 
-| Tryb | Działanie |
+| Mode | Action |
 |---|---|
-| `run` | zbuduj i uruchom serwer *(domyślne)* |
-| `build` | zbuduj wszystkie moduły (`-SkipTests` pomija testy) |
-| `test` | uruchom testy |
-| `clean` | wyczyść katalogi `target` |
-| `modules` | pokaż listę modułów |
-| `help` | pomoc |
+| `run` | build and run the server *(default)* |
+| `build` | build all modules (`-SkipTests` skips tests) |
+| `test` | run tests |
+| `clean` | clean the `target` directories |
+| `modules` | show the module list |
+| `help` | help |
 
-Gdyby PowerShell blokował skrypty:
+If PowerShell blocks scripts:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\SkyVault.ps1 build
 ```
 
-Maven **nie jest** wymagany — projekt używa wrappera `mvnw.cmd`, który sam pobiera właściwą
-wersję. Wymagane są: **JDK 25**, **PostgreSQL 18** i ustawiony `JAVA_HOME`.
+Maven **is not** required — the project uses the `mvnw.cmd` wrapper, which downloads the right
+version by itself. Required: **JDK 25**, **PostgreSQL 18** and a set `JAVA_HOME`.
 
-## Adresy
+## Addresses
 
-| Adres | Opis |
+| Address | Description |
 |---|---|
-| `http://localhost:8080/` | interfejs SkyVault |
-| `http://localhost:8080/api/status` | stan serwera i licznik współbieżności |
-| `http://localhost:8080/api/ping?delayMs=500` | żądanie z symulowanym opóźnieniem |
-| `http://localhost:8080/actuator/health` | stan aplikacji i bazy |
+| `http://localhost:8080/` | SkyVault interface |
+| `http://localhost:8080/api/status` | server status and concurrency counter |
+| `http://localhost:8080/api/ping?delayMs=500` | request with a simulated delay |
+| `http://localhost:8080/actuator/health` | application and database health |
 
-## API Zero-Knowledge
+## Zero-Knowledge API
 
-Serwer **nie zna hasła, klucza głównego ani nazw plików**. Cała kryptografia odbywa się
-w przeglądarce:
-
-```
-hasło
-  → Argon2id(sól 16 B, 256 MB)          = seed 32 B
-  → HKDF-SHA256("AuthVerifier")         = authVerifier 32 B   → serwer dostaje SHA-256
-  → HKDF-SHA256("MasterKey KEK")        = KEK 32 B
-masterKey 32 B (losowy)
-  → AES-GCM(KEK, iv 12 B)               = wrappedMasterKey 48 B → serwer zapisuje bez zmian
-```
-
-Serwer przechowuje wyłącznie: skrót weryfikatora, sól, zapakowany klucz główny oraz
-zaszyfrowane ścieżki. Kolumny z jawną nazwą pliku **nie ma**.
-
-### Format bloba
-
-Klient wysyła zaszyfrowaną zawartość jako jeden kawałek:
+The server **does not know the password, the master key or the file names**. All cryptography
+happens in the browser:
 
 ```
-blob = "SKYVAULT-AESGCM-v1\n" (19 B) || IV (12 B) || AES-GCM(klucz główny, zawartość)
+password
+  -> Argon2id(salt 16 B, 256 MB)        = seed 32 B
+  -> HKDF-SHA256("AuthVerifier")        = authVerifier 32 B   -> the server receives SHA-256
+  -> HKDF-SHA256("MasterKey KEK")       = KEK 32 B
+masterKey 32 B (random)
+  -> AES-GCM(KEK, iv 12 B)              = wrappedMasterKey 48 B -> the server stores it unchanged
 ```
 
-Nagłówek jednoznacznie identyfikuje format i wersję, więc IV jest częścią bloba
-i serwer nie musi go nigdzie zapisywać. Rozpoznanie wersji nie opiera się na długości
-pliku ani na heurystyce: odszyfrowywanie czyta magiczny nagłówek, a gdy go nie ma,
-wraca do starego układu `IV || szyfrogram` (zgodność wstecz).
+The server stores only: the verifier hash, the salt, the wrapped master key and
+encrypted paths. There is **no** column with a plaintext file name.
 
-`sizeBytes` to rozmiar jawny (przed szyfrowaniem), a `storedSizeBytes` — rozmiar
-tego, co faktycznie dotarło na serwer (przy tej konwencji: `sizeBytes + 47`:
-19 B nagłówka + 12 B IV + 16 B tagu AES-GCM).
+### Blob format
 
-Ścieżka ma osobne pole `virtualPathIv`, bo jej szyfrogram i IV są zwracane
-klientowi razem z metadanymi.
+The client sends the encrypted content as a single chunk:
 
-### Uwierzytelnianie
+```
+blob = "SKYVAULT-AESGCM-v1\n" (19 B) || IV (12 B) || AES-GCM(master key, content)
+```
 
-| Metoda | Endpoint | Opis |
+The header uniquely identifies the format and version, so the IV is part of the blob
+and the server does not have to store it anywhere. Version detection is not based on the
+file length or on heuristics: decryption reads the magic header, and when it is missing,
+it falls back to the old `IV || ciphertext` layout (backward compatibility).
+
+`sizeBytes` is the plaintext size (before encryption), and `storedSizeBytes` — the size of
+what actually reached the server (with this convention: `sizeBytes + 47`:
+19 B of header + 12 B of IV + 16 B of AES-GCM tag).
+
+The path has a separate `virtualPathIv` field, because its ciphertext and IV are returned
+to the client together with the metadata.
+
+### Authentication
+
+| Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/auth/register` | pakiet kryptograficzny → utworzenie konta i sesji |
-| `POST` | `/api/auth/login` | weryfikator → sesja |
-| `POST` | `/api/auth/logout` | koniec sesji |
-| `GET` | `/api/auth/crypto?email=` | sól i zapakowany klucz główny |
-| `GET` | `/api/auth/me` | profil zalogowanego użytkownika |
+| `POST` | `/api/auth/register` | crypto bundle -> account and session creation |
+| `POST` | `/api/auth/login` | verifier -> session |
+| `POST` | `/api/auth/logout` | end of session |
+| `GET` | `/api/auth/crypto?email=` | salt and wrapped master key |
+| `GET` | `/api/auth/me` | profile of the logged-in user |
 
-`/api/auth/crypto` zwraca poprawny kształtem materiał także dla nieistniejącego adresu,
-więc nie da się nim sprawdzić, które konta istnieją.
+`/api/auth/crypto` returns material with the correct shape even for a nonexistent address,
+so it cannot be used to check which accounts exist.
 
-### Pliki (wymagają sesji)
+### Files (require a session)
 
-| Metoda | Endpoint | Opis |
+| Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/files` | lista aktywnych plików i folderów |
-| `GET` | `/api/files/trash` | zawartość kosza |
-| `POST` | `/api/files` | rejestracja pliku (multipart: metadane + zaszyfrowany blob) |
-| `POST` | `/api/folders` | utworzenie folderu |
-| `GET` | `/api/files/{pathHash}/content` | pobranie zaszyfrowanego bloba |
-| `POST` | `/api/files/{pathHash}/move` | zmiana nazwy lub przeniesienie |
-| `POST` | `/api/files/{pathHash}/trash` | przeniesienie do kosza |
-| `POST` | `/api/files/{pathHash}/restore` | przywrócenie z kosza |
-| `POST` | `/api/files/{pathHash}/star` | oznaczenie gwiazdką |
-| `DELETE` | `/api/files/{pathHash}` | trwałe usunięcie (tylko z kosza) |
+| `GET` | `/api/files` | list of active files and folders |
+| `GET` | `/api/files/trash` | trash contents |
+| `POST` | `/api/files` | file registration (multipart: metadata + encrypted blob) |
+| `POST` | `/api/folders` | create a folder |
+| `GET` | `/api/files/{pathHash}/content` | download the encrypted blob |
+| `POST` | `/api/files/{pathHash}/move` | rename or move |
+| `POST` | `/api/files/{pathHash}/trash` | move to trash |
+| `POST` | `/api/files/{pathHash}/restore` | restore from trash |
+| `POST` | `/api/files/{pathHash}/star` | mark with a star |
+| `DELETE` | `/api/files/{pathHash}` | permanent delete (trash only) |
 
-`pathHash` to `HMAC-SHA256(masterKey, "SkyVault path v1:" + ścieżka)` w postaci hex.
-Jest deterministyczny, więc serwer może wyszukiwać i wykrywać konflikty, nie znając ścieżki.
-Klucz HMAC jest inny dla każdego użytkownika, więc tych samych nazw nie da się skorelować
-między kontami.
+`pathHash` is `HMAC-SHA256(masterKey, "SkyVault path v1:" + path)` in hex form.
+It is deterministic, so the server can search and detect conflicts without knowing the path.
+The HMAC key is different for every user, so the same names cannot be correlated
+across accounts.
 
-Pełny test przepływu: `.\SkyVault-api-test.ps1` (serwer musi działać).
+Full flow test: `.\SkyVault-api-test.ps1` (the server must be running).
 
-## Interfejs (GUI)
+## Interface (GUI)
 
-Strona jest zwykłym HTML/CSS/JS serwowanym z modułu `Web` — bez frameworka i bez
-procesu budowania frontendu. Układ i mechanika zostały przeniesione ze starego projektu
-(C#/Angular), ale kod i wygląd są nowe: **cała kolorystyka to skala szarości od `#0a0a0a`
-do `#ffffff`**, a ikony to własny sprite SVG (`currentColor`), bez zewnętrznych zestawów.
+The site is plain HTML/CSS/JS served from the `Web` module — no framework and no
+frontend build process. The layout and mechanics were carried over from the old project
+(C#/Angular), but the code and the look are new: **the whole color scheme is a grayscale
+scale from `#0a0a0a` to `#ffffff`**, and the icons are a custom SVG sprite
+(`currentColor`), with no external sets.
 
-Widoki:
+Views:
 
-| Widok | Zawartość |
+| View | Contents |
 |---|---|
-| Strona główna / Mój dysk | foldery i pliki wybranego poziomu, breadcrumbs |
-| Komputery | informacje o bieżącej sesji i zasadzie odblokowywania na urządzeniu |
-| Dokumenty, Obrazy, Filmy, Muzyka | biblioteki filtrowane po rozszerzeniu |
-| Ostatnie | 60 najnowszych plików z całego dysku |
-| Oznaczone gwiazdką | pliki i foldery z gwiazdką |
-| Kosz | przywracanie i trwałe usuwanie |
-| Skydysk | wykorzystanie limitu, największe pliki, narzut szyfrowania |
+| Home / My Drive | folders and files of the selected level, breadcrumbs |
+| Computers | information about the current session and the rule for unlocking on the device |
+| Documents, Images, Videos, Music | libraries filtered by extension |
+| Recent | the 60 newest files from the whole drive |
+| Starred | files and folders with a star |
+| Trash | restore and permanent delete |
+| Storage | quota usage, largest files, encryption overhead |
 
-Mechanika:
+Mechanics:
 
-- **Przesyłanie** — przyciskiem, przeciągnięciem plików na obszar roboczy albo całym
-  katalogiem (`Prześlij folder` w menu pod prawym przyciskiem). Plik jest szyfrowany
-  w karcie i dopiero potem wysyłany; konflikt nazw rozwiązuje się automatycznie
-  (`notatka (1).txt`).
-- **Pobieranie i podgląd** — pobranie odszyfrowuje blob w przeglądarce. Podgląd obsługuje
-  obrazy, filmy, dźwięk, PDF oraz tekst (`text/plain` i typowe rozszerzenia kodu).
-- **Nazwy i foldery** — zmiana nazwy, przenoszenie (także przeciągnięciem na folder),
-  tworzenie folderów. Folder przenoszony razem z całą zawartością.
-- **Kosz** — przenoszenie, przywracanie i trwałe usuwanie; opróżnianie całości.
-- **Menu kontekstowe** (prawy przycisk myszy) — otwórz/podgląd, pobierz, gwiazdka,
-  zmiana nazwy, przenoszenie, informacje, kosz; na pustym obszarze — nowy folder,
-  przesyłanie plików i katalogu, odświeżenie.
-- **Skróty** — `Ctrl+F` szukaj, `F2` zmiana nazwy, `Delete` do kosza, `Enter` otwórz.
+- **Upload** — with a button, by dragging files onto the workspace, or as a whole
+  directory (`Upload folder` in the right-click menu). A file is encrypted in the tab
+  and only then sent; a name conflict is resolved automatically (`note (1).txt`).
+- **Download and preview** — a download decrypts the blob in the browser. Preview supports
+  images, videos, audio, PDF and text (`text/plain` and common code extensions).
+- **Names and folders** — rename, move (also by dragging onto a folder),
+  folder creation. A folder is moved together with its entire contents.
+- **Trash** — move, restore and permanent delete; empty everything.
+- **Context menu** (right mouse button) — open/preview, download, star, rename,
+  move, details, trash; on an empty area — new folder, upload files and a directory, refresh.
+- **Shortcuts** — `Ctrl+F` search, `F2` rename, `Delete` to trash, `Enter` open.
 
-Klucz główny żyje wyłącznie w `sessionStorage` karty: zamknięcie karty zapomina klucz,
-a otwarcie SkyVault w nowej karcie prosi o hasło („odblokuj dysk”) — sesja serwerowa
-nadal obowiązuje, ale klucza nikt nie odtworzy bez hasła. Po rejestracji klient pobiera
-**kartę odzyskiwania** z kluczem głównym; bez niej utrata hasła oznacza utratę danych.
+The master key lives only in the tab's `sessionStorage`: closing the tab forgets the key,
+and opening SkyVault in a new tab asks for the password ("unlock the drive") — the server
+session is still valid, but no one can recreate the key without the password. After registration
+the client downloads a **recovery card** with the master key; without it, losing the password
+means losing the data.
 
-Web Crypto wymaga bezpiecznego kontekstu: `http://localhost` i `http://127.0.0.1`
-działają, ale dostęp przez LAN po zwykłym HTTP — już nie (potrzebny HTTPS).
+Web Crypto requires a secure context: `http://localhost` and `http://127.0.0.1`
+work, but LAN access over plain HTTP does not (HTTPS is needed).
 
-Zasoby statyczne są serwowane z `Cache-Control: no-store`. Powód: Spring Boot pakuje
-wpisy JAR z datą 1980-02-01 (powtarzalne buildy), więc przeglądarka dostawałaby `304`
-i trzymała stary interfejs po aktualizacji.
+Static resources are served with `Cache-Control: no-store`. Reason: Spring Boot packs
+JAR entries with the date 1980-02-01 (reproducible builds), so the browser would get `304`
+and keep the old interface after an update.
 
-## Limit współbieżności
+## Concurrency limit
 
-Serwer obsługuje jednocześnie **maksymalnie 256 użytkowników**.
+The server handles **at most 256 users** at the same time.
 
-Mechanizm jest dwuwarstwowy:
+The mechanism has two layers:
 
-1. **Pula wątków Tomcata** — `server.tomcat.threads.max=256`. Tyle żądań kontener obsłuży
-   równolegle; nadwyżka czeka w kolejce (`accept-count=512`).
-2. **Semafor aplikacji** — `ConcurrencyLimiter` z 256 miejscami. Żądania do `/api/**` zajmują
-   miejsce na czas obsługi. Gdy wszystkich 256 jest zajętych, żądanie czeka
-   `acquire-timeout-ms` (domyślnie 2000 ms), a potem dostaje **HTTP 429 Too Many Requests**.
+1. **Tomcat thread pool** — `server.tomcat.threads.max=512`. Deliberately more than 256:
+   the surplus traffic reaches the application semaphore and is rejected quickly, instead of
+   waiting silently in the connector queue.
+2. **Application semaphore** — `ConcurrencyLimiter` with 256 slots. Requests to `/api/**` take
+   a slot for the duration of handling. When all 256 are taken, a request waits
+   `acquire-timeout-ms` (2000 ms by default) and then gets **HTTP 429 Too Many Requests**.
 
-Żądania po pliki statyczne oraz `/actuator/**` **nie** są liczone — dzięki temu strona zawsze
-się wczyta, a monitoring działa nawet przy pełnym obciążeniu.
+Requests for static files and `/actuator/**` are **not** counted — thanks to that the site
+always loads, and monitoring works even under full load.
 
-Ustawienia w `Server/src/main/resources/application.properties`:
+Measured with `.\SkyVault-loadtest.ps1 -Requests 640 -DelayMs 3000`: 384 x `200`, 256 x `429`,
+peak load 256.
+
+Settings in `Server/src/main/resources/application.properties`:
 
 ```properties
+server.tomcat.threads.max=512
 skyvault.server.max-concurrent-users=256
 skyvault.server.acquire-timeout-ms=2000
 ```
 
-Można je nadpisać bez zmiany kodu:
+They can be overridden without changing the code:
 
 ```powershell
 $env:MAX_CONCURRENT_USERS = 32
 .\SkyVault.ps1
 ```
 
-## Baza danych
+## Database
 
-Baza `skyvault` i rola `skyvault` muszą istnieć:
+The `skyvault` database and the `skyvault` role must exist:
 
 ```sql
 CREATE ROLE skyvault LOGIN PASSWORD 'skyvault';
 CREATE DATABASE skyvault OWNER skyvault;
 ```
 
-Domyślne połączenie: `127.0.0.1:5432 / skyvault`, użytkownik `skyvault`, hasło `skyvault`.
-Nadpisanie: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
+Default connection: `127.0.0.1:5432 / skyvault`, user `skyvault`, password `skyvault`.
+Override: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
 
-> Hasło `skyvault` to wartość **wyłącznie deweloperska**. Przed wdrożeniem ustaw
-> `DB_PASSWORD` spoza repozytorium.
+> The `skyvault` password is a **development-only** value. Before deployment, set
+> `DB_PASSWORD` from outside the repository.
 
-Migracje Flyway leżą w `Server/src/main/resources/db/migration`. Schemat opisuje
-`V1__init_schema.sql` (tabele `app_user`, `user_session`, `stored_file`).
+Flyway migrations live in `Server/src/main/resources/db/migration`. The schema is described by
+`V1__init_schema.sql` (tables `app_user`, `user_session`, `stored_file`).
 
-Flyway **jest potrzebny**: `spring.jpa.hibernate.ddl-auto=validate` sprawdza przy starcie,
-czy encje zgadzają się ze schematem. Bez migracji dodanie nowej encji uniemożliwi start aplikacji.
+Flyway **is needed**: `spring.jpa.hibernate.ddl-auto=validate` checks at startup
+whether the entities match the schema. Without migrations, adding a new entity would make it
+impossible to start the application.
 
-Zasada: plików `V1__...` nie edytuje się po wykonaniu na bazie — każda zmiana to nowy plik
-z kolejnym numerem.
+Rule: `V1__...` files are not edited after being executed on the database — every change is a new file
+with the next number.
 
-### Przechowywanie plików
+### File storage
 
-Zaszyfrowane bloby trafiają do `data/files/u{id}/`. Serwer zapisuje bajty dokładnie w takiej
-postaci, w jakiej dostał je od klienta — nie ma klucza, więc nie potrafi ich odczytać.
-Katalog `data/` jest w `.gitignore`.
+Encrypted blobs go to `data/files/u{id}/`. The server writes the bytes exactly in the form
+in which it received them from the client — it has no key, so it cannot read them.
+The `data/` directory is in `.gitignore`.
 
-| Zmienna | Domyślnie | Znaczenie |
+| Variable | Default | Meaning |
 |---|---|---|
-| `SKYVAULT_DATA_DIR` | `data/files` | katalog na bloby |
-| `DEFAULT_QUOTA_GB` | `5` | limit miejsca na konto |
+| `SKYVAULT_DATA_DIR` | `data/files` | directory for blobs |
+| `DEFAULT_QUOTA_GB` | `5` | space limit per account |
 
-## Testy
+## Tests
 
 ```powershell
 .\SkyVault.ps1 test
 ```
 
-- `ServerApplicationTests` — czy kontekst Springa startuje (konfiguracja, baza, Flyway).
-- `ConcurrencyLimiterTests` — czy limit współbieżności faktycznie nie jest przekraczany
-  przy 200 równoległych żądaniach.
+- `ServerApplicationTests` — whether the Spring context starts (configuration, database, Flyway).
+- `ConcurrencyLimiterTests` — whether the concurrency limit is actually not exceeded
+  with 200 parallel requests.
 
-## Test współbieżności serwera
+## Server concurrency test
 
-Osobne narzędzie, którym sprawdzisz limit 256 na działającym serwerze:
+A separate tool to check the 256 limit on a running server:
 
 ```powershell
-.\SkyVault-loadtest.ps1                            # 320 zadań, limit domyślny 256
-.\SkyVault-loadtest.ps1 -Requests 40 -DelayMs 3000 # szybka weryfikacja ścieżki 429
+.\SkyVault-loadtest.ps1                            # 320 requests, default limit 256
+.\SkyVault-loadtest.ps1 -Requests 40 -DelayMs 3000 # quick verification of the 429 path
 ```
 
-Skrypt wysyła prawdziwe równoległe połączenia i zlicza odpowiedzi `200` oraz `429`.
-`DelayMs` musi być większy niż `acquire-timeout-ms` (domyślnie 2000 ms) — inaczej nadwyżka
-doczeka się wolnego miejsca i dostanie `200` zamiast `429`.
+The script sends real parallel connections and counts `200` and `429` responses.
+`DelayMs` must be greater than `acquire-timeout-ms` (2000 ms by default) — otherwise the excess
+will wait for a free slot and get `200` instead of `429`.
 
-Dlaczego nie ma tego na stronie? Przeglądarka otwiera do jednego serwera tylko kilka
-połączeń naraz, więc z poziomu przeglądarki nie da się zapełnić limitu 256 miejsc.
+Why is this not on the site? A browser opens only a few connections at a time to a single
+server, so the 256-slot limit cannot be filled from the browser.
 
-## Dalsze kroki
+## Next steps
 
-1. ~~Projekt schematu bazy pod architekturę Zero-Knowledge~~ — gotowy (`V1__init_schema.sql`).
-2. ~~Rejestracja i logowanie~~ — gotowe.
-3. ~~Szyfrowanie po stronie klienta w przeglądarce (AES-GCM, Argon2id, HKDF) i GUI przeglądania~~ — gotowe (moduł `Web`).
-4. Testy funkcjonalne i ocena działania systemu — wymagane w planie pracy.
+1. ~~Database schema design for the Zero-Knowledge architecture~~ — done (`V1__init_schema.sql`).
+2. ~~Registration and login~~ — done.
+3. ~~Client-side encryption in the browser (AES-GCM, Argon2id, HKDF) and the browsing GUI~~ — done (`Web` module).
+4. Functional tests and evaluation of system operation — required in the thesis plan.
