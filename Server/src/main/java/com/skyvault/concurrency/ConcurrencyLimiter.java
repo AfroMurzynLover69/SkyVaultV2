@@ -1,7 +1,7 @@
-package pl.politechnika.skyvault.server.concurrency;
+package com.skyvault.concurrency;
 
 import org.springframework.stereotype.Component;
-import pl.politechnika.skyvault.server.config.ServerProperties;
+import com.skyvault.config.ServerProperties;
 
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;

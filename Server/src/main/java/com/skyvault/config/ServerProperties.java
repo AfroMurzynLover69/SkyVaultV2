@@ -1,4 +1,4 @@
-package pl.politechnika.skyvault.server.config;
+package com.skyvault.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

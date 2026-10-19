@@ -1,4 +1,4 @@
-package pl.politechnika.skyvault.server.concurrency;
+package com.skyvault.concurrency;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

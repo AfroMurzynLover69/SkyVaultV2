@@ -10,8 +10,9 @@ Promotor: dr inż. Mariusz Ginter
 
 ## Stan projektu
 
-Na tym etapie gotowy jest **szkielet technologiczny**: moduły, launcher, serwer z limitem
-współbieżności i strona kontrolna. Logika Zero-Knowledge dojdzie w kolejnych krokach.
+Gotowy jest **szkielet technologiczny** oraz **API Zero-Knowledge**: rejestracja z weryfikacją
+e-mail, logowanie, sesje i operacje na zaszyfrowanych plikach. Interfejs przeglądania plików
+powstanie na końcu — po ustaleniu pełnego kontraktu API.
 
 ## Struktura
 
@@ -29,12 +30,16 @@ SkyVault\
 │
 └── Server\           ← MODUŁ SERWERA
     └── src\main\
-        ├── java\pl\politechnika\skyvault\server\
+        ├── java\com\skyvault\
         │   ├── ServerApplication.java
-        │   ├── api\StatusController.java
-        │   ├── concurrency\ConcurrencyLimiter.java
-        │   ├── concurrency\ConcurrencyLimitFilter.java
-        │   └── config\ServerProperties.java
+        │   ├── api\          ← /api/status, /api/ping
+        │   ├── auth\         ← rejestracja, logowanie, pakiet kryptograficzny
+        │   ├── file\         ← metadane plików, bloby, kosz
+        │   ├── session\      ← sesje i ochrona endpointów
+        │   ├── user\         ← konto użytkownika
+        │   ├── concurrency\  ← limit 256 współbieżnych żądań
+        │   ├── config\       ← konfiguracja Springa
+        │   └── error\        ← obsługa błędów API
         └── resources\
             ├── application.properties
             └── db\migration\        ← migracje Flyway
@@ -92,6 +97,59 @@ wersję. Wymagane są: **JDK 25**, **PostgreSQL 18** i ustawiony `JAVA_HOME`.
 | `http://localhost:8080/api/ping?delayMs=500` | żądanie z symulowanym opóźnieniem |
 | `http://localhost:8080/actuator/health` | stan aplikacji i bazy |
 
+## API Zero-Knowledge
+
+Serwer **nie zna hasła, klucza głównego ani nazw plików**. Cała kryptografia odbywa się
+w przeglądarce:
+
+```
+hasło
+  → Argon2id(sól 16 B, 256 MB)          = seed 32 B
+  → HKDF-SHA256("AuthVerifier")         = authVerifier 32 B   → serwer dostaje SHA-256
+  → HKDF-SHA256("MasterKey KEK")        = KEK 32 B
+masterKey 32 B (losowy)
+  → AES-GCM(KEK, iv 12 B)               = wrappedMasterKey 48 B → serwer zapisuje bez zmian
+```
+
+Serwer przechowuje wyłącznie: skrót weryfikatora, sól, zapakowany klucz główny oraz
+zaszyfrowane ścieżki. Kolumny z jawną nazwą pliku **nie ma**.
+
+### Uwierzytelnianie
+
+| Metoda | Endpoint | Opis |
+|---|---|---|
+| `POST` | `/api/auth/register` | pakiet kryptograficzny → kod weryfikacyjny na e-mail |
+| `POST` | `/api/auth/verify` | kod → utworzenie konta i sesji |
+| `POST` | `/api/auth/login` | weryfikator → sesja |
+| `POST` | `/api/auth/logout` | koniec sesji |
+| `GET` | `/api/auth/crypto?email=` | sól i zapakowany klucz główny |
+| `GET` | `/api/auth/me` | profil zalogowanego użytkownika |
+
+`/api/auth/crypto` zwraca poprawny kształtem materiał także dla nieistniejącego adresu,
+więc nie da się nim sprawdzić, które konta istnieją.
+
+### Pliki (wymagają sesji)
+
+| Metoda | Endpoint | Opis |
+|---|---|---|
+| `GET` | `/api/files` | lista aktywnych plików i folderów |
+| `GET` | `/api/files/trash` | zawartość kosza |
+| `POST` | `/api/files` | rejestracja pliku (multipart: metadane + zaszyfrowany blob) |
+| `POST` | `/api/folders` | utworzenie folderu |
+| `GET` | `/api/files/{pathHash}/content` | pobranie zaszyfrowanego bloba |
+| `POST` | `/api/files/{pathHash}/move` | zmiana nazwy lub przeniesienie |
+| `POST` | `/api/files/{pathHash}/trash` | przeniesienie do kosza |
+| `POST` | `/api/files/{pathHash}/restore` | przywrócenie z kosza |
+| `POST` | `/api/files/{pathHash}/star` | oznaczenie gwiazdką |
+| `DELETE` | `/api/files/{pathHash}` | trwałe usunięcie (tylko z kosza) |
+
+`pathHash` to `HMAC-SHA256(masterKey, "SkyVault path v1:" + ścieżka)` w postaci hex.
+Jest deterministyczny, więc serwer może wyszukiwać i wykrywać konflikty, nie znając ścieżki.
+Klucz HMAC jest inny dla każdego użytkownika, więc tych samych nazw nie da się skorelować
+między kontami.
+
+Pełny test przepływu: `.\SkyVault-api-test.ps1` (serwer musi działać).
+
 ## Limit współbieżności
 
 Serwer obsługuje jednocześnie **maksymalnie 256 użytkowników**.
@@ -136,9 +194,26 @@ Nadpisanie: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
 > Hasło `skyvault` to wartość **wyłącznie deweloperska**. Przed wdrożeniem ustaw
 > `DB_PASSWORD` spoza repozytorium.
 
-Migracje Flyway leżą w `Server/src/main/resources/db/migration`. Katalog jest na razie pusty —
-schemat bazy powstanie w kolejnym kroku. Zasada: plików `V1__...` nie edytuje się po wykonaniu
-na bazie, każda zmiana to nowy plik z kolejnym numerem.
+Migracje Flyway leżą w `Server/src/main/resources/db/migration`. Schemat opisuje
+`V1__init_schema.sql` (tabele `app_user`, `pending_registration`, `user_session`, `stored_file`).
+
+Flyway **jest potrzebny**: `spring.jpa.hibernate.ddl-auto=validate` sprawdza przy starcie,
+czy encje zgadzają się ze schematem. Bez migracji dodanie nowej encji uniemożliwi start aplikacji.
+
+Zasada: plików `V1__...` nie edytuje się po wykonaniu na bazie — każda zmiana to nowy plik
+z kolejnym numerem.
+
+### Przechowywanie plików
+
+Zaszyfrowane bloby trafiają do `data/files/u{id}/`. Serwer zapisuje bajty dokładnie w takiej
+postaci, w jakiej dostał je od klienta — nie ma klucza, więc nie potrafi ich odczytać.
+Katalog `data/` jest w `.gitignore`.
+
+| Zmienna | Domyślnie | Znaczenie |
+|---|---|---|
+| `SKYVAULT_DATA_DIR` | `data/files` | katalog na bloby |
+| `DEFAULT_QUOTA_GB` | `5` | limit miejsca na konto |
+| `SKYVAULT_MAIL_DEV_MODE` | `true` | kod weryfikacyjny w odpowiedzi API (tylko do testów) |
 
 ## Testy
 
@@ -168,7 +243,8 @@ połączeń naraz, więc z poziomu przeglądarki nie da się zapełnić limitu 2
 
 ## Dalsze kroki
 
-1. Projekt schematu bazy pod architekturę Zero-Knowledge (użytkownicy, metadane plików, klucze).
-2. Rejestracja i logowanie z weryfikacją e-mail.
-3. Szyfrowanie po stronie klienta (AES-GCM, Argon2id, HKDF).
-4. Testy funkcjonalne i ocena działania systemu — wymagane w planie pracy.
+1. ~~Projekt schematu bazy pod architekturę Zero-Knowledge~~ — gotowy (`V1__init_schema.sql`).
+2. ~~Rejestracja i logowanie z weryfikacją e-mail~~ — gotowe (tryb deweloperski).
+3. Szyfrowanie po stronie klienta w przeglądarce (AES-GCM, Argon2id, HKDF) i GUI przeglądania.
+4. Konfiguracja SMTP i wyłączenie `skyvault.mail.dev-mode`.
+5. Testy funkcjonalne i ocena działania systemu — wymagane w planie pracy.
