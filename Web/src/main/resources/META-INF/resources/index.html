@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SkyVault — panel kontrolny</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <h1>SkyVault</h1>
+    <p class="subtitle">Panel kontrolny serwera</p>
+    <span id="status-dot" class="dot offline" title="Stan połączenia z API"></span>
+</header>
+
+<main>
+
+    <section class="card">
+        <h2>Współbieżność</h2>
+
+        <div class="gauge-row">
+            <span id="active-value">—</span>
+            <span class="gauge-sep">/</span>
+            <span id="max-value">—</span>
+            <span class="gauge-label">aktywnych użytkowników</span>
+        </div>
+
+        <div class="bar">
+            <div id="bar-fill" class="bar-fill"></div>
+        </div>
+
+        <dl class="metrics">
+            <dt>Wolne miejsca</dt><dd id="available-value">—</dd>
+            <dt>Szczyt obciążenia</dt><dd id="peak-value">—</dd>
+            <dt>Odrzucone (429)</dt><dd id="rejected-value">—</dd>
+        </dl>
+    </section>
+
+    <section class="card">
+        <h2>Serwer</h2>
+        <dl class="metrics">
+            <dt>Aplikacja</dt><dd id="app-value">—</dd>
+            <dt>Wersja</dt><dd id="version-value">—</dd>
+            <dt>Java</dt><dd id="java-value">—</dd>
+            <dt>Czas działania</dt><dd id="uptime-value">—</dd>
+        </dl>
+    </section>
+
+    <section class="card wide">
+        <h2>Testy</h2>
+
+        <div class="toolbar">
+            <button id="btn-refresh" type="button">Odśwież</button>
+            <button id="btn-ping" type="button">Wyślij ping</button>
+
+            <label class="field">
+                Opóźnienie
+                <select id="delay-select">
+                    <option value="0">0 ms</option>
+                    <option value="200">200 ms</option>
+                    <option value="500" selected>500 ms</option>
+                    <option value="1000">1 s</option>
+                </select>
+            </label>
+
+            <button id="btn-burst" type="button" class="primary">Test obciążenia</button>
+        </div>
+
+        <p class="hint">
+            „Test obciążenia" wysyła serię równoległych żądań z opóźnieniem ustawionym powyżej.
+            Przeglądarka otwiera do jednego serwera tylko kilka połączeń naraz, więc ten przycisk
+            sprawdza mechanizm, ale nie zapełni limitu 256 miejsc. Do prawdziwego testu
+            współbieżności potrzebny jest skrypt po stronie konsoli.
+        </p>
+
+        <div id="log" class="log" role="log" aria-live="polite"></div>
+    </section>
+
+</main>
+
+<footer>
+    <span id="footer-info"></span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
