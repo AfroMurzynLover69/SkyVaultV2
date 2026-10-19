@@ -114,6 +114,21 @@ masterKey 32 B (losowy)
 Serwer przechowuje wyłącznie: skrót weryfikatora, sól, zapakowany klucz główny oraz
 zaszyfrowane ścieżki. Kolumny z jawną nazwą pliku **nie ma**.
 
+### Format bloba
+
+Klient wysyła zaszyfrowaną zawartość jako jeden kawałek:
+
+```
+blob = IV (12 B) || AES-GCM(klucz główny, zawartość) || tag (16 B)
+```
+
+Dzięki temu IV jest częścią bloba i serwer nie musi go nigdzie zapisywać.
+`sizeBytes` to rozmiar jawny (przed szyfrowaniem), a `storedSizeBytes` — rozmiar
+tego, co faktycznie dotarło na serwer (przy tej konwencji: `sizeBytes + 28`).
+
+Ścieżka ma osobne pole `virtualPathIv`, bo jej szyfrogram i IV są zwracane
+klientowi razem z metadanymi.
+
 ### Uwierzytelnianie
 
 | Metoda | Endpoint | Opis |
