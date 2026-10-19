@@ -34,23 +34,6 @@ CREATE TABLE app_user (
 
 
 -- ---------------------------------------------------------------------------
--- Rejestracje oczekujace na potwierdzenie e-maila
--- Konto nie powstaje, dopoki kod nie zostanie wpisany. Dzieki temu adres e-mail
--- nie jest zajmowany przez kogos, kto go nie posiada.
--- ---------------------------------------------------------------------------
-CREATE TABLE pending_registration (
-    email                 VARCHAR(254) PRIMARY KEY,
-    auth_verifier_hash    VARCHAR(64)  NOT NULL,
-    password_salt         VARCHAR(64)  NOT NULL,
-    wrapped_master_key    VARCHAR(128) NOT NULL,
-    wrapped_master_key_iv VARCHAR(64)  NOT NULL,
-    code                  VARCHAR(12)  NOT NULL,
-    expires_at            TIMESTAMPTZ  NOT NULL,
-    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
-);
-
-
--- ---------------------------------------------------------------------------
 -- Sesje
 -- Identyfikator sesji jest losowym tokenem (32 B). W bazie trzymamy jego skrot,
 -- zeby wyciek bazy nie pozwolil podszyc sie pod zalogowanego uzytkownika.

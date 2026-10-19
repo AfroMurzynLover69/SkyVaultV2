@@ -2,8 +2,8 @@
 <#
     Test przepĹ‚ywu API SkyVault (Zero-Knowledge).
 
-    Sprawdza cala sciezke: rejestracja -> weryfikacja -> logowanie -> upload ->
-    listowanie -> pobranie -> kosz -> przywrocenie -> usuniecie -> wylogowanie.
+    Sprawdza cala sciezke: rejestracja -> sesja -> upload -> listowanie ->
+    pobranie -> kosz -> przywrocenie -> usuniecie -> wylogowanie.
 
     Uzywa curl.exe (dostepny w Windows 10/11) i pliku cookies.
 #>
@@ -121,18 +121,17 @@ $register = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $register
 Assert-Equal 'HTTP' $register.Status 200
 $registerJson = $register.Body | ConvertFrom-Json
 Assert-Equal 'email' $registerJson.email $email
-Assert-True 'kod weryfikacyjny zwrocony (dev-mode)' ($registerJson.devCode -ne $null)
+Assert-True 'sesja otwarta od razu' ($registerJson.userId -gt 0)
 
-# --- 3. Weryfikacja e-maila ---
-Write-Host "`n3. Weryfikacja kodu"
-$verifyBody = @{ email = $email; code = $registerJson.devCode } | ConvertTo-Json
-$verify = Invoke-Api -Method 'POST' -Path '/api/auth/verify' -Json $verifyBody
-Assert-Equal 'HTTP' $verify.Status 200
-
+# --- 3. Sesja po rejestracji ---
+Write-Host "`n3. Sesja po rejestracji"
 $me = Invoke-Api -Method 'GET' -Path '/api/auth/me'
 Assert-Equal 'sesja /api/auth/me' $me.Status 200
 $meJson = $me.Body | ConvertFrom-Json
 Assert-Equal 'konto' $meJson.email $email
+
+$duplicate = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $registerBody
+Assert-Equal 'duplikat konta odrzucony' $duplicate.Status 409
 
 # --- 4. Kontrola pakietu kryptograficznego ---
 Write-Host "`n4. Walidacja pakietu kryptograficznego"

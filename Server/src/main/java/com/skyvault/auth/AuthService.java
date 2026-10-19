@@ -10,14 +10,13 @@ import com.skyvault.user.AppUserRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Rejestracja, weryfikacja e-maila i logowanie.
+ * Rejestracja i logowanie.
  *
  * <p>Serwer nigdy nie widzi hasła. Widzi tylko weryfikator, z którego i tak liczy
  * SHA-256 przed zapisem. Logowanie polega na porównaniu skrótów w czasie stałym.
@@ -33,11 +32,7 @@ public class AuthService {
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[^\\s@/\\\\]+@[^\\s@/\\\\]+\\.[^\\s@/\\\\]+$");
 
-    private static final int VERIFICATION_CODE_BOUND = 1_000_000;
-
     private final AppUserRepository userRepository;
-    private final PendingRegistrationRepository pendingRepository;
-    private final MailService mailService;
 
     private final long defaultQuotaBytes;
     private final SecureRandom random = new SecureRandom();
@@ -45,12 +40,8 @@ public class AuthService {
     private final String dummyVerifierHash;
 
     public AuthService(AppUserRepository userRepository,
-                       PendingRegistrationRepository pendingRepository,
-                       MailService mailService,
                        @Value("${skyvault.storage.default-quota-gb:5}") long defaultQuotaGb) {
         this.userRepository = userRepository;
-        this.pendingRepository = pendingRepository;
-        this.mailService = mailService;
         this.defaultQuotaBytes = defaultQuotaGb * 1024L * 1024L * 1024L;
 
         random.nextBytes(fakeSaltSecret);
@@ -60,12 +51,17 @@ public class AuthService {
 
     // --- Rejestracja ---
 
+    /**
+     * Tworzy konto od razu. Klient przysyła gotowy pakiet kryptograficzny:
+     * sól, weryfikator i klucz główny zapakowany KEK. Serwer nie potrafi
+     * odtworzyć z tego ani hasła, ani klucza głównego.
+     */
     @Transactional
-    public StartRegistrationResult startRegistration(String rawEmail,
-                                                     String authVerifier,
-                                                     String passwordSalt,
-                                                     String wrappedMasterKey,
-                                                     String wrappedMasterKeyIv) {
+    public AppUser register(String rawEmail,
+                            String authVerifier,
+                            String passwordSalt,
+                            String wrappedMasterKey,
+                            String wrappedMasterKeyIv) {
         String email = normalizeEmail(rawEmail);
 
         if (!isValidEmail(email)) {
@@ -78,55 +74,15 @@ public class AuthService {
             throw ApiException.conflict("Konto z tym adresem juz istnieje");
         }
 
-        String code = String.format("%06d", random.nextInt(VERIFICATION_CODE_BOUND));
-
-        pendingRepository.save(new PendingRegistration(
+        AppUser user = new AppUser(
                 email,
                 CryptoPackage.hashAuthVerifier(authVerifier),
                 passwordSalt,
                 wrappedMasterKey,
                 wrappedMasterKeyIv,
-                code,
-                OffsetDateTime.now().plusMinutes(10)));
-
-        String devCode = mailService.sendVerificationCode(email, code);
-
-        return new StartRegistrationResult(email, true, devCode);
-    }
-
-    @Transactional
-    public AppUser verifyRegistration(String rawEmail, String code) {
-        String email = normalizeEmail(rawEmail);
-
-        PendingRegistration pending = pendingRepository.findById(email)
-                .orElseThrow(() -> ApiException.badRequest(
-                        "Brak oczekujacej rejestracji. Zarejestruj sie ponownie."));
-
-        if (pending.isExpired()) {
-            pendingRepository.delete(pending);
-            throw ApiException.badRequest("Kod wygasl. Zarejestruj sie ponownie.");
-        }
-        if (!MessageDigest.isEqual(
-                pending.getCode().getBytes(StandardCharsets.UTF_8),
-                code.trim().getBytes(StandardCharsets.UTF_8))) {
-            throw ApiException.badRequest("Nieprawidlowy kod weryfikacyjny");
-        }
-        if (userRepository.existsByEmail(email)) {
-            pendingRepository.delete(pending);
-            throw ApiException.conflict("Konto z tym adresem juz istnieje");
-        }
-
-        AppUser user = new AppUser(
-                email,
-                pending.getAuthVerifierHash(),
-                pending.getPasswordSalt(),
-                pending.getWrappedMasterKey(),
-                pending.getWrappedMasterKeyIv(),
                 defaultQuotaBytes);
 
-        AppUser saved = userRepository.save(user);
-        pendingRepository.delete(pending);
-        return saved;
+        return userRepository.save(user);
     }
 
     // --- Logowanie ---
@@ -236,8 +192,5 @@ public class AuthService {
     // --- Wyniki ---
 
     public record CryptoMaterial(String passwordSalt, String wrappedMasterKey, String wrappedMasterKeyIv) {
-    }
-
-    public record StartRegistrationResult(String email, boolean verificationRequired, String devCode) {
     }
 }

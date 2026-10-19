@@ -10,8 +10,8 @@ Promotor: dr inż. Mariusz Ginter
 
 ## Stan projektu
 
-Gotowy jest **szkielet technologiczny** oraz **API Zero-Knowledge**: rejestracja z weryfikacją
-e-mail, logowanie, sesje i operacje na zaszyfrowanych plikach. Interfejs przeglądania plików
+Gotowy jest **szkielet technologiczny** oraz **API Zero-Knowledge**: rejestracja, logowanie,
+sesje i operacje na zaszyfrowanych plikach. Interfejs przeglądania plików
 powstanie na końcu — po ustaleniu pełnego kontraktu API.
 
 ## Struktura
@@ -118,8 +118,7 @@ zaszyfrowane ścieżki. Kolumny z jawną nazwą pliku **nie ma**.
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
-| `POST` | `/api/auth/register` | pakiet kryptograficzny → kod weryfikacyjny na e-mail |
-| `POST` | `/api/auth/verify` | kod → utworzenie konta i sesji |
+| `POST` | `/api/auth/register` | pakiet kryptograficzny → utworzenie konta i sesji |
 | `POST` | `/api/auth/login` | weryfikator → sesja |
 | `POST` | `/api/auth/logout` | koniec sesji |
 | `GET` | `/api/auth/crypto?email=` | sól i zapakowany klucz główny |
@@ -195,7 +194,7 @@ Nadpisanie: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
 > `DB_PASSWORD` spoza repozytorium.
 
 Migracje Flyway leżą w `Server/src/main/resources/db/migration`. Schemat opisuje
-`V1__init_schema.sql` (tabele `app_user`, `pending_registration`, `user_session`, `stored_file`).
+`V1__init_schema.sql` (tabele `app_user`, `user_session`, `stored_file`).
 
 Flyway **jest potrzebny**: `spring.jpa.hibernate.ddl-auto=validate` sprawdza przy starcie,
 czy encje zgadzają się ze schematem. Bez migracji dodanie nowej encji uniemożliwi start aplikacji.
@@ -213,7 +212,6 @@ Katalog `data/` jest w `.gitignore`.
 |---|---|---|
 | `SKYVAULT_DATA_DIR` | `data/files` | katalog na bloby |
 | `DEFAULT_QUOTA_GB` | `5` | limit miejsca na konto |
-| `SKYVAULT_MAIL_DEV_MODE` | `true` | kod weryfikacyjny w odpowiedzi API (tylko do testów) |
 
 ## Testy
 
@@ -244,7 +242,6 @@ połączeń naraz, więc z poziomu przeglądarki nie da się zapełnić limitu 2
 ## Dalsze kroki
 
 1. ~~Projekt schematu bazy pod architekturę Zero-Knowledge~~ — gotowy (`V1__init_schema.sql`).
-2. ~~Rejestracja i logowanie z weryfikacją e-mail~~ — gotowe (tryb deweloperski).
+2. ~~Rejestracja i logowanie~~ — gotowe.
 3. Szyfrowanie po stronie klienta w przeglądarce (AES-GCM, Argon2id, HKDF) i GUI przeglądania.
-4. Konfiguracja SMTP i wyłączenie `skyvault.mail.dev-mode`.
-5. Testy funkcjonalne i ocena działania systemu — wymagane w planie pracy.
+4. Testy funkcjonalne i ocena działania systemu — wymagane w planie pracy.
