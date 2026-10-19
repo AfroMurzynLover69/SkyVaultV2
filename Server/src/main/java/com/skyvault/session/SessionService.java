@@ -47,7 +47,7 @@ public class SessionService {
 
         return ResponseCookie.from(COOKIE_NAME, token)
                 .httpOnly(true)
-                .secure(false)
+                .secure(true)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(SESSION_LIFETIME)
@@ -88,7 +88,7 @@ public class SessionService {
     public ResponseCookie clearedCookie() {
         return ResponseCookie.from(COOKIE_NAME, "")
                 .httpOnly(true)
-                .secure(false)
+                .secure(true)
                 .sameSite("Lax")
                 .path("/")
                 .maxAge(0)

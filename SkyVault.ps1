@@ -69,6 +69,17 @@ function Get-ServerJar {
         Select-Object -First 1
 }
 
+function Get-LanAddress {
+    $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Sort-Object RouteMetric |
+        Select-Object -First 1
+    if (-not $route) { return $null }
+
+    return Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $route.InterfaceIndex -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike '169.254.*' } |
+        Select-Object -First 1 -ExpandProperty IPAddress
+}
+
 function Invoke-RunServer {
     if (-not $SkipBuild) {
         Write-Header 'Building modules'
@@ -82,16 +93,23 @@ function Invoke-RunServer {
         throw 'Server JAR file not found. Run first: .\SkyVault.ps1 build'
     }
 
+    $lanAddress = Get-LanAddress
+
     Write-Host ''
     Write-Host '  SkyVault' -ForegroundColor Green
     Write-Host ('  ' + ('=' * 8)) -ForegroundColor Green
     Write-Host "  Starting: $($jar.Name)"
     Write-Host '  The Web module is served automatically by the server.'
     Write-Host ''
-    Write-Host '    Home:    http://localhost:8080/'                  -ForegroundColor White
-    Write-Host '    Status:  http://localhost:8080/api/status'         -ForegroundColor White
-    Write-Host '    Ping:    http://localhost:8080/api/ping'           -ForegroundColor White
-    Write-Host '    Health:  http://localhost:8080/actuator/health'    -ForegroundColor White
+    Write-Host '    Home:    https://localhost:8443/'                  -ForegroundColor White
+    Write-Host '    Status:  https://localhost:8443/api/status'         -ForegroundColor White
+    Write-Host '    Ping:    https://localhost:8443/api/ping'           -ForegroundColor White
+    Write-Host '    Health:  https://localhost:8443/actuator/health'    -ForegroundColor White
+    if ($lanAddress) {
+        Write-Host ''
+        Write-Host "    Network: https://$($lanAddress):8443/" -ForegroundColor White
+        Write-Host '    Accept the certificate warning once in the browser.' -ForegroundColor DarkGray
+    }
     Write-Host ''
     Write-Host '  Stop: Ctrl + C' -ForegroundColor DarkGray
     Write-Host ''
