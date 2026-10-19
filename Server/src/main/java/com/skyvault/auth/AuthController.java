@@ -31,42 +31,26 @@ public class AuthController {
 
     private final AuthService authService;
     private final SessionService sessionService;
-    private final MailService mailService;
 
-    public AuthController(AuthService authService,
-                          SessionService sessionService,
-                          MailService mailService) {
+    public AuthController(AuthService authService, SessionService sessionService) {
         this.authService = authService;
         this.sessionService = sessionService;
-        this.mailService = mailService;
     }
 
     /**
-     * Krok 1 rejestracji: klient przysyła gotowy pakiet kryptograficzny.
-     * Konto jeszcze nie powstaje — najpierw trzeba potwierdzić adres e-mail.
+     * Rejestracja: klient przysyła gotowy pakiet kryptograficzny, serwer tworzy konto
+     * i od razu otwiera sesję. Adres e-mail nie jest weryfikowany.
      */
     @PostMapping("/register")
-    public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
-        AuthService.StartRegistrationResult result = authService.startRegistration(
+    public ResponseEntity<SessionResponse> register(@Valid @RequestBody RegisterRequest request,
+                                                    HttpServletResponse response) {
+        AppUser user = authService.register(
                 request.email(),
                 request.authVerifier(),
                 request.passwordSalt(),
                 request.wrappedMasterKey(),
                 request.wrappedMasterKeyIv());
 
-        return ResponseEntity.ok(new RegisterResponse(
-                result.email(),
-                result.verificationRequired(),
-                result.devCode()));
-    }
-
-    /**
-     * Krok 2 rejestracji: kod z e-maila tworzy konto i od razu otwiera sesję.
-     */
-    @PostMapping("/verify")
-    public ResponseEntity<SessionResponse> verify(@Valid @RequestBody VerifyRequest request,
-                                                  HttpServletResponse response) {
-        AppUser user = authService.verifyRegistration(request.email(), request.code());
         return withSession(user, response);
     }
 
@@ -142,20 +126,12 @@ public class AuthController {
             @NotBlank String wrappedMasterKeyIv) {
     }
 
-    public record VerifyRequest(
-            @NotBlank @Size(max = 254) String email,
-            @NotBlank @Size(max = 12) String code) {
-    }
-
     public record LoginRequest(
             @NotBlank @Size(max = 254) String email,
             @NotBlank String authVerifier) {
     }
 
     // --- Kontrakt wyjściowy ---
-
-    public record RegisterResponse(String email, boolean verificationRequired, String devCode) {
-    }
 
     public record SessionResponse(Long userId, String email) {
     }
