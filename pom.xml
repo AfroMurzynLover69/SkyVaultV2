@@ -10,7 +10,7 @@
 		<relativePath/>
 	</parent>
 
-	<groupId>pl.politechnika</groupId>
+	<groupId>com.skyvault</groupId>
 	<artifactId>skyvault</artifactId>
 	<version>0.1.0-SNAPSHOT</version>
 	<packaging>pom</packaging>

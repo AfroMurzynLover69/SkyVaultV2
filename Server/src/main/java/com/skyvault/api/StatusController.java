@@ -1,4 +1,4 @@
-package pl.politechnika.skyvault.server.api;
+package com.skyvault.api;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -7,8 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import pl.politechnika.skyvault.server.config.ServerProperties;
-import pl.politechnika.skyvault.server.concurrency.ConcurrencyLimiter;
+import com.skyvault.config.ServerProperties;
+import com.skyvault.concurrency.ConcurrencyLimiter;
 
 import java.time.Duration;
 import java.time.Instant;

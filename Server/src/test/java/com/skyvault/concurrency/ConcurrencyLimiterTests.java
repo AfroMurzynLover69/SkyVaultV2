@@ -1,8 +1,8 @@
-package pl.politechnika.skyvault.server.concurrency;
+package com.skyvault.concurrency;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import pl.politechnika.skyvault.server.config.ServerProperties;
+import com.skyvault.config.ServerProperties;
 
 import java.util.ArrayList;
 import java.util.List;

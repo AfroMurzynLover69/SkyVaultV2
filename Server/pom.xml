@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<parent>
-		<groupId>pl.politechnika</groupId>
+		<groupId>com.skyvault</groupId>
 		<artifactId>skyvault</artifactId>
 		<version>0.1.0-SNAPSHOT</version>
 	</parent>
@@ -17,7 +17,7 @@
 
 		<!-- Warstwa webowa (strona) dostarczana jako osobny modul -->
 		<dependency>
-			<groupId>pl.politechnika</groupId>
+			<groupId>com.skyvault</groupId>
 			<artifactId>skyvault-web</artifactId>
 			<version>${project.version}</version>
 		</dependency>

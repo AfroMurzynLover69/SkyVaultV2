@@ -34,3 +34,6 @@ logs/
 .env
 *.env
 !.env.example
+
+# --- Dane aplikacji (zaszyfrowane bloby) ---
+data/
