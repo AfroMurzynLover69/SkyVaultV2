@@ -53,24 +53,91 @@ rebuilding the server code.
 
 ## Architecture
 
-Block view of the running system:
+Component view of the running system:
 
-```text
-Browser (Web module)
-  index.html + style.css + app.js + crypto.js
-  password -> Argon2id -> seed -> HKDF -> verifier -> SHA-256 -> verifier hash
-                            \-> HKDF -> KEK -> AES-GCM -> wrapped master key
-  master key (sessionStorage) -> AES-GCM -> encrypted blob
-  path -> AES-GCM -> encrypted path;  path -> HMAC-SHA256 -> pathHash (hex)
-        |
-        | HTTPS: ciphertext, hashes and the wrapped key only
-        v
-Server (Server module, Spring Boot)
-  ConcurrencyLimitFilter (256 slots -> HTTP 429) -> AuthInterceptor -> controllers
-  AuthController / FileController -> FileService -> StorageService
-        |
-        +--> PostgreSQL: app_user, user_session, stored_file (hashes, ciphertext)
-        +--> disk: data/files/u{id}/, encrypted blobs (no keys on the server)
+```mermaid
+flowchart TB
+    subgraph CLIENT["Browser — Web module (Zero-Knowledge boundary)"]
+        direction TB
+        UI["index.html + style.css<br/>interface"]
+        APP["app.js<br/>upload · preview · trash · search"]
+        CRYPTO["crypto.js<br/>Argon2id · HKDF · AES-GCM · HMAC"]
+        SODIUM["libsodium.js<br/>local copy"]
+        WEBCRYPTO["Web Crypto API"]
+        SESSION["sessionStorage<br/>master key"]
+        UI --> APP
+        APP --> CRYPTO
+        CRYPTO --> SODIUM
+        CRYPTO --> WEBCRYPTO
+        CRYPTO --> SESSION
+    end
+
+    subgraph TRANSPORT["Transport"]
+        TLS["HTTPS · TLS<br/>port 8443 · self-signed PKCS12"]
+    end
+
+    subgraph SERVER["Server — Spring Boot (Server module)"]
+        direction TB
+        TOMCAT["Tomcat<br/>512 threads"]
+        LIMIT["ConcurrencyLimitFilter<br/>256 slots · HTTP 429"]
+        AUTH["AuthInterceptor<br/>skyvault_session cookie"]
+        CTRL["AuthController<br/>FileController<br/>StatusController"]
+        SERVICES["AuthService · FileService<br/>StorageService · SessionService"]
+        TOMCAT --> LIMIT
+        LIMIT --> AUTH
+        AUTH --> CTRL
+        CTRL --> SERVICES
+    end
+
+    subgraph STORAGE["Storage"]
+        PG[("PostgreSQL<br/>app_user · user_session · stored_file")]
+        DISK[("Disk<br/>data/files · encrypted blobs")]
+    end
+
+    LAUNCHER["SkyVault.ps1 + mvnw<br/>build · run · test"]
+    TESTS["SkyVault-api-test.ps1<br/>SkyVault-loadtest.ps1"]
+
+    CRYPTO -- "ciphertext · hashes · wrapped key" --> TLS
+    TLS --> TOMCAT
+    SERVICES --> PG
+    SERVICES --> DISK
+    LAUNCHER -.-> TOMCAT
+    TESTS -.-> TLS
+```
+
+Runtime view — what happens during registration, upload and download:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Browser (app.js)
+    participant C as crypto.js
+    participant S as Server (Spring Boot)
+    participant DB as PostgreSQL
+    participant D as Disk
+
+    Note over U,C: Sign up
+    U->>C: password + salt
+    C->>C: Argon2id -> HKDF-SHA256
+    C-->>U: authVerifier + wrapped master key
+    U->>S: POST /api/auth/register
+    S->>DB: INSERT app_user
+
+    Note over U,C: Upload
+    U->>C: file content
+    C->>C: AES-GCM + HMAC-SHA256
+    C-->>U: encrypted blob, encrypted path, pathHash
+    U->>S: POST /api/files (multipart)
+    S->>DB: INSERT stored_file
+    S->>D: write encrypted blob
+
+    Note over U,C: Download
+    U->>S: GET /api/files/{pathHash}/content
+    S->>DB: SELECT stored_file
+    S->>D: read encrypted blob
+    S-->>U: encrypted blob
+    U->>C: decrypt
+    C-->>U: plaintext in the tab only
 ```
 
 The Server block never receives the password, the master key, plaintext file names or
