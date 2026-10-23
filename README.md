@@ -273,12 +273,29 @@ to the client together with the metadata.
 |---|---|---|
 | `POST` | `/api/auth/register` | crypto bundle -> account and session creation |
 | `POST` | `/api/auth/login` | verifier -> session |
+| `POST` | `/api/auth/password` | re-wrap the master key with a new password (session required) |
 | `POST` | `/api/auth/logout` | end of session |
 | `GET` | `/api/auth/crypto?email=` | salt and wrapped master key |
 | `GET` | `/api/auth/me` | profile of the logged-in user |
 
 `/api/auth/crypto` returns material with the correct shape even for a nonexistent address,
 so it cannot be used to check which accounts exist.
+
+### Changing the master password
+
+`POST /api/auth/password` changes only the wrapper around the master key. The client proves
+the current password with its verifier, unwraps the master key with the old KEK and wraps
+the same key with a KEK derived from the new password:
+
+```
+current password -> Argon2id + HKDF -> KEK_old -> unwrap master key
+new password     -> Argon2id + HKDF -> KEK_new -> AES-GCM(KEK_new, master key)
+```
+
+The server verifies `currentAuthVerifier`, stores the new salt and wrapped key, and revokes
+all sessions of the account; the browser that made the change receives a fresh cookie.
+The master key itself never changes, so `pathHash` values, encrypted paths and every file
+blob remain valid — nothing is re-encrypted.
 
 ### Files (require a session)
 
@@ -332,6 +349,8 @@ Mechanics:
   images, videos, audio, PDF and text (`text/plain` and common code extensions).
 - **Names and folders** — rename, move (also by dragging onto a folder),
   folder creation. A folder is moved together with its entire contents.
+- **Account** — the account menu downloads the recovery card and changes the master
+  password. Changing it re-wraps the master key only; files are not re-encrypted.
 - **Trash** — move, restore and permanent delete; empty everything.
 - **Context menu** (right mouse button) — open/preview, download, star, rename,
   move, details, trash; on an empty area — new folder, upload files and a directory, refresh.

@@ -51,6 +51,25 @@ public class AuthController {
         return withSession(user, response);
     }
 
+    @PostMapping("/password")
+    public ResponseEntity<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+                                               HttpServletRequest httpRequest,
+                                               HttpServletResponse response) {
+        Long userId = currentUserId(httpRequest);
+        authService.changePassword(
+                userId,
+                request.currentAuthVerifier(),
+                request.authVerifier(),
+                request.passwordSalt(),
+                request.wrappedMasterKey(),
+                request.wrappedMasterKeyIv());
+
+        sessionService.deleteAllForUser(userId);
+        ResponseCookie cookie = sessionService.createSession(userId);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
         ResponseCookie cleared = sessionService.destroySession(request);
@@ -105,6 +124,14 @@ public class AuthController {
     public record LoginRequest(
             @NotBlank @Size(max = 254) String email,
             @NotBlank String authVerifier) {
+    }
+
+    public record ChangePasswordRequest(
+            @NotBlank String currentAuthVerifier,
+            @NotBlank String authVerifier,
+            @NotBlank String passwordSalt,
+            @NotBlank String wrappedMasterKey,
+            @NotBlank String wrappedMasterKeyIv) {
     }
 
     public record SessionResponse(Long userId, String email) {
