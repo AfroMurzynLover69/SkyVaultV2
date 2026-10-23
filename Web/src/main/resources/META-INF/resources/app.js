@@ -422,6 +422,7 @@
     state.uploading = false;
     state.selectedHash = null;
     C.clearMasterKey();
+    closePasswordChange();
     closeContextMenu();
     $('appScreen').hidden = true;
     $('authScreen').hidden = false;
@@ -474,6 +475,106 @@
     const safeEmail = email.replace(/[^a-z0-9@._-]/gi, '_');
     saveBlob(C.recoverySheet(email, masterKey), 'SkyVault-recovery-' + safeEmail + '.txt');
     notify('Recovery card downloaded. Keep it offline.');
+  }
+
+  function showPasswordMessage(message) {
+    const element = $('passwordMessage');
+    element.textContent = message;
+    element.hidden = false;
+  }
+
+  function closePasswordChange() {
+    $('passwordModal').hidden = true;
+    $('passwordForm').reset();
+    $('passwordMessage').hidden = true;
+    $('passwordSubmit').disabled = false;
+    $('passwordSubmit').textContent = 'Change password';
+  }
+
+  function openPasswordChange() {
+    $('accountPanel').hidden = true;
+    $('passwordForm').reset();
+    $('passwordMessage').hidden = true;
+    $('passwordSubmit').disabled = false;
+    $('passwordSubmit').textContent = 'Change password';
+    $('passwordModal').hidden = false;
+    setTimeout(() => $('currentPassword').focus(), 0);
+  }
+
+  async function handlePasswordChange(event) {
+    event.preventDefault();
+    $('passwordMessage').hidden = true;
+
+    const current = $('currentPassword').value;
+    const next = $('newPassword').value;
+    const confirmation = $('confirmPassword').value;
+
+    if (!current) {
+      showPasswordMessage('Enter your current master password.');
+      return;
+    }
+    if (next.length < 10) {
+      showPasswordMessage('The new password must be at least 10 characters long.');
+      return;
+    }
+    if (next !== confirmation) {
+      showPasswordMessage('The new passwords do not match.');
+      return;
+    }
+    if (next === current) {
+      showPasswordMessage('The new password must be different from the current one.');
+      return;
+    }
+
+    const submit = $('passwordSubmit');
+    submit.disabled = true;
+    submit.textContent = 'Deriving keys...';
+
+    try {
+      const email = state.user ? state.user.email : '';
+      if (!email) {
+        throw new Error('Sign in again to change the password.');
+      }
+
+      const material = await api('/api/auth/crypto?email=' + encodeURIComponent(email));
+      const currentKeys = await C.deriveKeys(current, C.fromBase64(material.passwordSalt));
+
+      let masterKey;
+      try {
+        masterKey = await C.unwrapMasterKey(
+          currentKeys.kek,
+          C.fromBase64(material.wrappedMasterKey),
+          C.fromBase64(material.wrappedMasterKeyIv)
+        );
+      } catch (error) {
+        throw new Error('The current password is incorrect.');
+      }
+
+      submit.textContent = 'Wrapping master key...';
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const newKeys = await C.deriveKeys(next, salt);
+      const wrapped = await C.wrapMasterKey(newKeys.kek, masterKey);
+
+      await api('/api/auth/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentAuthVerifier: C.toBase64(currentKeys.authVerifier),
+          authVerifier: C.toBase64(newKeys.authVerifier),
+          passwordSalt: C.toBase64(salt),
+          wrappedMasterKey: C.toBase64(wrapped.ciphertext),
+          wrappedMasterKeyIv: C.toBase64(wrapped.iv)
+        })
+      });
+
+      C.storeMasterKey(email, masterKey);
+      closePasswordChange();
+      notify('Master password changed. Other devices were signed out.', 'success');
+    } catch (error) {
+      showPasswordMessage(error.message || 'Could not change the password.');
+      submit.disabled = false;
+      submit.textContent = 'Change password';
+    }
   }
 
   async function refreshData(initial = false) {
@@ -1587,6 +1688,10 @@
       closePreview();
       return;
     }
+    if (id === 'passwordModal') {
+      closePasswordChange();
+      return;
+    }
     $(id).hidden = true;
   }
 
@@ -1709,6 +1814,8 @@
       $('aboutModal').hidden = false;
     });
     $('logoutButton').addEventListener('click', logout);
+    $('changePasswordButton').addEventListener('click', openPasswordChange);
+    $('passwordForm').addEventListener('submit', handlePasswordChange);
     $('recoveryButton').addEventListener('click', downloadRecovery);
 
     $('uploadClose').addEventListener('click', () => {
@@ -1953,6 +2060,9 @@
         }
         if (!$('aboutModal').hidden) {
           $('aboutModal').hidden = true;
+        }
+        if (!$('passwordModal').hidden) {
+          closePasswordChange();
         }
         return;
       }

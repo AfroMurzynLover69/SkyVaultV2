@@ -171,6 +171,9 @@
         <p class="account-plan">Local plan</p>
         <div class="meter"><span id="accountMeter"></span></div>
         <p class="account-usage" id="accountUsage"></p>
+        <button class="secondary" id="changePasswordButton" type="button">
+          <svg class="icon"><use href="#i-lock"></use></svg><span>Change password</span>
+        </button>
         <button class="secondary" id="recoveryButton" type="button">
           <svg class="icon"><use href="#i-lock"></use></svg><span>Recovery card</span>
         </button>
@@ -285,6 +288,33 @@
     <div class="modal-actions">
       <button type="button" id="modalCancel">Cancel</button>
       <button type="submit" id="modalOk" class="primary">OK</button>
+    </div>
+  </form>
+</div>
+
+<div id="passwordModal" class="modal" hidden>
+  <form id="passwordForm" class="modal-panel password-panel" role="dialog" aria-modal="true"
+        aria-labelledby="passwordTitle">
+    <h2 id="passwordTitle">Change master password</h2>
+    <p class="password-intro">Your files are not re-encrypted. The same master key is unwrapped
+       with the current password and wrapped again with the new one, so your recovery card
+       stays valid.</p>
+    <p id="passwordMessage" class="password-message" hidden></p>
+
+    <label for="currentPassword">Current password</label>
+    <input id="currentPassword" type="password" autocomplete="current-password" required>
+
+    <label for="newPassword">New password</label>
+    <input id="newPassword" type="password" autocomplete="new-password" minlength="10" required>
+
+    <label for="confirmPassword">Confirm new password</label>
+    <input id="confirmPassword" type="password" autocomplete="new-password" minlength="10" required>
+
+    <p class="password-hint">Minimum 10 characters. Other devices will be signed out.</p>
+
+    <div class="modal-actions">
+      <button type="button" data-close-modal>Cancel</button>
+      <button type="submit" id="passwordSubmit" class="primary">Change password</button>
     </div>
   </form>
 </div>

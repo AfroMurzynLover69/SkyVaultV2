@@ -21,6 +21,7 @@ public class WebConfig implements WebMvcConfigurer {
                         "/api/files/**",
                         "/api/folders/**",
                         "/api/auth/me",
-                        "/api/auth/logout");
+                        "/api/auth/logout",
+                        "/api/auth/password");
     }
 }

@@ -83,6 +83,34 @@ public class AuthService {
         return (matches && user.isPresent()) ? user : Optional.empty();
     }
 
+    @Transactional
+    public AppUser changePassword(Long userId,
+                                  String currentAuthVerifier,
+                                  String authVerifier,
+                                  String passwordSalt,
+                                  String wrappedMasterKey,
+                                  String wrappedMasterKeyIv) {
+        AppUser user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.unauthorized("Session expired"));
+
+        if (currentAuthVerifier == null
+                || currentAuthVerifier.isBlank()
+                || !CryptoPackage.verifierMatches(currentAuthVerifier, user.getAuthVerifierHash())) {
+            throw ApiException.badRequest("Current password is incorrect");
+        }
+        if (!CryptoPackage.isValid(authVerifier, passwordSalt, wrappedMasterKey, wrappedMasterKeyIv)) {
+            throw ApiException.badRequest("Invalid crypto package");
+        }
+
+        user.replaceCryptoMaterial(
+                CryptoPackage.hashAuthVerifier(authVerifier),
+                passwordSalt,
+                wrappedMasterKey,
+                wrappedMasterKeyIv);
+
+        return userRepository.save(user);
+    }
+
     @Transactional(readOnly = true)
     public Optional<AppUser> profile(Long userId) {
         return userRepository.findById(userId);

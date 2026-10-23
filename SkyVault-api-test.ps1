@@ -186,11 +186,58 @@ $afterDelete = Invoke-Api -Method 'GET' -Path '/api/files'
 $afterJson = @($afterDelete.Body | ConvertFrom-Json | ForEach-Object { $_ })
 Assert-Equal 'files after delete' $afterJson.Count 0
 
-Write-Host "`n10. Access control"
+Write-Host "`n10. Change master password"
+$wrongChangeBody = @{
+    currentAuthVerifier = New-Base64 32
+    authVerifier        = New-Base64 32
+    passwordSalt        = New-Base64 16
+    wrappedMasterKey    = New-Base64 48
+    wrappedMasterKeyIv  = New-Base64 12
+} | ConvertTo-Json
+$wrongChange = Invoke-Api -Method 'POST' -Path '/api/auth/password' -Json $wrongChangeBody
+Assert-Equal 'wrong current password rejected' $wrongChange.Status 400
+
+$newVerifier = New-Base64 32
+$newSalt = New-Base64 16
+$newWrappedKey = New-Base64 48
+$newWrappedIv = New-Base64 12
+
+$changeBody = @{
+    currentAuthVerifier = $authVerifier
+    authVerifier        = $newVerifier
+    passwordSalt        = $newSalt
+    wrappedMasterKey    = $newWrappedKey
+    wrappedMasterKeyIv  = $newWrappedIv
+} | ConvertTo-Json
+$change = Invoke-Api -Method 'POST' -Path '/api/auth/password' -Json $changeBody
+Assert-Equal 'HTTP' $change.Status 204
+
+$newCrypto = Invoke-Api -Method 'GET' -Path "/api/auth/crypto?email=$email"
+$newCryptoJson = $newCrypto.Body | ConvertFrom-Json
+Assert-Equal 'new salt' $newCryptoJson.passwordSalt $newSalt
+Assert-Equal 'new wrapped key' $newCryptoJson.wrappedMasterKey $newWrappedKey
+
+$meAfterChange = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+Assert-Equal 'current session refreshed' $meAfterChange.Status 200
+
+$logoutAfterChange = Invoke-Api -Method 'POST' -Path '/api/auth/logout'
+Assert-Equal 'logout after password change' $logoutAfterChange.Status 204
+
+$oldLoginBody = @{ email = $email; authVerifier = $authVerifier } | ConvertTo-Json
+$oldLogin = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $oldLoginBody
+Assert-Equal 'old password rejected' $oldLogin.Status 401
+
+$newLoginBody = @{ email = $email; authVerifier = $newVerifier } | ConvertTo-Json
+$newLogin = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $newLoginBody
+Assert-Equal 'new password accepted' $newLogin.Status 200
+
+Write-Host "`n11. Access control"
 $logout = Invoke-Api -Method 'POST' -Path '/api/auth/logout'
 Assert-Equal 'logout' $logout.Status 204
 $afterLogout = Invoke-Api -Method 'GET' -Path '/api/files'
 Assert-Equal 'no access without a session' $afterLogout.Status 401
+$anonymousChange = Invoke-Api -Method 'POST' -Path '/api/auth/password' -Json $changeBody
+Assert-Equal 'password change requires a session' $anonymousChange.Status 401
 
 Write-Host ""
 if ($script:Failures -eq 0) {
