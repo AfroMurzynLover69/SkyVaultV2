@@ -4,14 +4,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.skyvault.error.ApiException;
+import com.skyvault.plan.PlanStateFile;
 import com.skyvault.user.AppUser;
 import com.skyvault.user.AppUserRepository;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -21,7 +24,18 @@ public class AuthService {
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[^\\s@/\\\\]+@[^\\s@/\\\\]+\\.[^\\s@/\\\\]+$");
 
+    private static final int SETTINGS_IV_BYTES = 12;
+    private static final int MAX_SETTINGS_BYTES = 4096;
+
+    private static final long GIB = 1024L * 1024L * 1024L;
+    public static final int PLAN_DURATION_DAYS = 30;
+    private static final Map<String, Long> PLAN_QUOTAS = Map.of(
+            "free", 5 * GIB,
+            "plus", 200 * GIB,
+            "pro", 1024 * GIB);
+
     private final AppUserRepository userRepository;
+    private final PlanStateFile planStateFile;
 
     private final long defaultQuotaBytes;
     private final SecureRandom random = new SecureRandom();
@@ -29,8 +43,10 @@ public class AuthService {
     private final String dummyVerifierHash;
 
     public AuthService(AppUserRepository userRepository,
+                       PlanStateFile planStateFile,
                        @Value("${skyvault.storage.default-quota-gb:5}") long defaultQuotaGb) {
         this.userRepository = userRepository;
+        this.planStateFile = planStateFile;
         this.defaultQuotaBytes = defaultQuotaGb * 1024L * 1024L * 1024L;
 
         random.nextBytes(fakeSaltSecret);
@@ -64,7 +80,9 @@ public class AuthService {
                 wrappedMasterKeyIv,
                 defaultQuotaBytes);
 
-        return userRepository.save(user);
+        AppUser saved = userRepository.save(user);
+        planStateFile.refreshIfNeeded();
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -114,6 +132,59 @@ public class AuthService {
     @Transactional(readOnly = true)
     public Optional<AppUser> profile(Long userId) {
         return userRepository.findById(userId);
+    }
+
+    @Transactional
+    public AppUser updateSettings(Long userId, String encryptedSettings, String settingsIv) {
+        if (encryptedSettings == null || settingsIv == null) {
+            throw ApiException.badRequest("Invalid settings payload");
+        }
+
+        byte[] ciphertext;
+        byte[] iv;
+        try {
+            ciphertext = Base64.getDecoder().decode(encryptedSettings);
+            iv = Base64.getDecoder().decode(settingsIv);
+        } catch (IllegalArgumentException exception) {
+            throw ApiException.badRequest("Invalid settings payload");
+        }
+
+        if (ciphertext.length == 0
+                || ciphertext.length > MAX_SETTINGS_BYTES
+                || iv.length != SETTINGS_IV_BYTES) {
+            throw ApiException.badRequest("Invalid settings payload");
+        }
+
+        AppUser user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.unauthorized("Session expired"));
+        user.setEncryptedSettings(encryptedSettings);
+        user.setSettingsIv(settingsIv);
+        return userRepository.save(user);
+    }
+
+    @Transactional
+    public AppUser updatePlan(Long userId, String plan) {
+        Long quota = plan == null ? null : PLAN_QUOTAS.get(plan);
+        if (quota == null) {
+            throw ApiException.badRequest("Unknown plan");
+        }
+
+        AppUser user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.unauthorized("Session expired"));
+        if (user.getUsedBytes() > quota) {
+            throw ApiException.conflict("The selected plan is smaller than the data already stored");
+        }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        user.changePlan(plan, quota, now, now.plusDays(PLAN_DURATION_DAYS));
+        AppUser saved = userRepository.save(user);
+        planStateFile.refreshIfNeeded();
+        return saved;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isPlanActive(AppUser user) {
+        return user.isPlanActive(OffsetDateTime.now());
     }
 
     @Transactional(readOnly = true)

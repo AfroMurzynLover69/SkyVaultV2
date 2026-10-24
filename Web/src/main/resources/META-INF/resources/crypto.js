@@ -6,6 +6,7 @@
 
   const BLOB_MAGIC = 'SKYVAULT-AESGCM-v1\n';
   const HKDF_SALT = 'SkyVault HKDF v1';
+  const SETTINGS_AAD = 'SkyVault Settings v1';
   const ARGON2_OUT_BYTES = 32;
   const ARGON2_MEM_BYTES = 256 * 1024 * 1024;
 
@@ -210,6 +211,39 @@
     return toHex(signature);
   }
 
+  async function settingsKey(usages) {
+    requireWebCrypto();
+    const masterKey = loadMasterKey();
+    if (!masterKey) {
+      throw new Error('No key in this session. Sign in again.');
+    }
+    const derived = await hkdf(masterKey, 'SkyVault Settings Key v1');
+    return crypto.subtle.importKey('raw', derived, 'AES-GCM', false, usages);
+  }
+
+  async function encryptSettings(settings) {
+    const key = await settingsKey(['encrypt']);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = encoder.encode(JSON.stringify(settings));
+    const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv, additionalData: encoder.encode(SETTINGS_AAD) },
+      key,
+      plaintext));
+    return {
+      encryptedSettings: toBase64(ciphertext),
+      settingsIv: toBase64(iv)
+    };
+  }
+
+  async function decryptSettings(encryptedSettings, settingsIv) {
+    const key = await settingsKey(['decrypt']);
+    const plaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fromBase64(settingsIv), additionalData: encoder.encode(SETTINGS_AAD) },
+      key,
+      fromBase64(encryptedSettings));
+    return JSON.parse(decoder.decode(plaintext));
+  }
+
   function recoverySheet(email, masterKey) {
     const text = [
       'SkyVault Recovery card',
@@ -237,6 +271,8 @@
     encryptPath: encryptPath,
     decryptPath: decryptPath,
     pathHash: pathHash,
+    encryptSettings: encryptSettings,
+    decryptSettings: decryptSettings,
     recoverySheet: recoverySheet,
     toBase64: toBase64,
     fromBase64: fromBase64

@@ -9,8 +9,11 @@ Author: Patryk Rysinski · Kielce University of Technology · Teleinformatics
 ## Project status
 
 Completed: the **technology skeleton**, the **Zero-Knowledge API** (registration, login,
-sessions, operations on encrypted files) and the **drive browsing interface** —
-entirely in black and white, encrypting all data in the browser.
+sessions, operations on encrypted files), the **drive browsing interface with media
+galleries** (browser-generated thumbnails, no ffmpeg) and a **settings page with three
+30-day storage plans** — with Mono as the default palette and three optional color
+themes, encrypting all data in the browser. Plan dates are kept by the server and
+mirrored to a plain-text file; an expired plan disables the account until it is renewed.
 
 ## Structure
 
@@ -23,7 +26,8 @@ SkyVault\
 |-- Web\              <- WEB MODULE
 |   `-- src\main\resources\META-INF\resources\
 |       |-- index.html          <- GUI skeleton (custom SVG icon sprite)
-|       |-- style.css           <- black and white theme, grayscale only
+|       |-- style.css           <- four color themes via CSS variables
+|       |-- palettes.html       <- visual preview of all four palettes
 |       |-- crypto.js           <- Argon2id, HKDF, AES-GCM (WebCrypto + libsodium)
 |       |-- app.js              <- SPA logic: drive, libraries, trash, upload
 |       `-- vendor\             <- libsodium (local copy, no CDN)
@@ -59,7 +63,7 @@ flowchart TB
     subgraph CLIENT["Browser — Web module (Zero-Knowledge boundary)"]
         direction TB
         UI["index.html + style.css<br/>interface"]
-        APP["app.js<br/>upload · preview · trash · search"]
+        APP["app.js<br/>upload · preview · galleries · trash · search"]
         CRYPTO["crypto.js<br/>Argon2id · HKDF · AES-GCM · HMAC"]
         SODIUM["libsodium.js<br/>local copy"]
         WEBCRYPTO["Web Crypto API"]
@@ -153,9 +157,9 @@ plaintext content. That is the Zero-Knowledge boundary; the sections below descr
 | `Web/` | web module: the static interface, packaged as a JAR |
 | `Web/.../META-INF/resources/` | `index.html`, `style.css`, `app.js`, `crypto.js`, `vendor/` (libsodium) |
 | `Server/` | server module: Spring Boot application; depends on Web |
-| `Server/.../com/skyvault/` | backend packages: `api`, `auth`, `file`, `session`, `user`, `concurrency`, `config`, `error` |
+| `Server/.../com/skyvault/` | backend packages: `api`, `auth`, `file`, `plan`, `session`, `user`, `concurrency`, `config`, `error` |
 | `Server/.../resources/` | `application.properties` and Flyway migrations (`db/migration`) |
-| `data/` | runtime directory, gitignored: encrypted blobs in `data/files/u{id}/` |
+| `data/` | runtime directory, gitignored: encrypted blobs in `data/files/u{id}/` and the plain-text plan state in `data/plans.json` |
 
 ## Technology stack
 
@@ -273,6 +277,8 @@ to the client together with the metadata.
 | `POST` | `/api/auth/register` | crypto bundle -> account and session creation |
 | `POST` | `/api/auth/login` | verifier -> session |
 | `POST` | `/api/auth/password` | re-wrap the master key with a new password (session required) |
+| `POST` | `/api/auth/settings` | save the encrypted account settings, e.g. the color theme (session required) |
+| `POST` | `/api/auth/plan` | renew or switch the storage plan for 30 days: `free` 5 GB, `plus` 200 GB, `pro` 1 TB (session required) |
 | `POST` | `/api/auth/logout` | end of session |
 | `GET` | `/api/auth/crypto?email=` | salt and wrapped master key |
 | `GET` | `/api/auth/me` | profile of the logged-in user |
@@ -323,8 +329,12 @@ development certificate automatically.
 
 The site is plain HTML/CSS/JS served from the `Web` module — no framework and no
 frontend build process. The layout and mechanics were carried over from the old project
-(C#/Angular), but the code and the look are new: **the whole color scheme is a grayscale
-scale from `#0a0a0a` to `#ffffff`**, and the icons are a custom SVG sprite
+(C#/Angular), but the code and the look are new. The default palette, **Mono**, is a
+grayscale scale from `#0a0a0a` to `#ffffff`; the sun icon in the top bar switches between
+four palettes (Mono, Nord, Forest, Amber), and the choice is encrypted in the browser
+with a key derived from the master key, then stored in the account
+(`app_user.encrypted_settings`) with a `localStorage` cache for instant loading.
+`palettes.html` shows all four side by side. The icons are a custom SVG sprite
 (`currentColor`), with no external sets.
 
 Views:
@@ -333,19 +343,29 @@ Views:
 |---|---|
 | Home / My Drive | folders and files of the selected level, breadcrumbs |
 | Computers | information about the current session and the rule for unlocking on the device |
-| Documents, Images, Videos, Music | libraries filtered by extension |
+| Documents, Images, Videos, Music | libraries filtered by extension; Images, Videos and Music open as a media gallery |
 | Recent | the 60 newest files from the whole drive |
 | Starred | files and folders with a star |
 | Trash | restore and permanent delete |
 | Storage | quota usage, largest files, encryption overhead |
+| Settings / Plans | three storage plans (Free 5 GB, Plus 200 GB, Pro 1 TB), 30-day access, current usage and one-click renewal |
 
 Mechanics:
 
-- **Upload** — with a button, by dragging files onto the workspace, or as a whole
-  directory (`Upload folder` in the right-click menu). A file is encrypted in the tab
+- **Upload** — with a button, by dragging files or a whole folder onto the workspace,
+  or as a whole directory (`Upload folder` in the right-click menu). A dropped folder
+  keeps its internal structure, including subfolders. A file is encrypted in the tab
   and only then sent; a name conflict is resolved automatically (`note (1).txt`).
 - **Download and preview** — a download decrypts the blob in the browser. Preview supports
   images, videos, audio, PDF and text (`text/plain` and common code extensions).
+- **Media galleries** — Images, Videos and Music open in a gallery grid by default.
+  Photos are rasterized to WebP thumbnails with Canvas, videos show a poster frame from
+  the first seconds together with their duration, and audio uses embedded cover art
+  (ID3/FLAC/MP4) or a generated waveform. Decryption and rendering happen only in the
+  tab: there is no ffmpeg or server-side media processing. Thumbnails load lazily (two
+  jobs at a time) and stay in an in-memory cache of 80 items; files larger than 48 MB
+  (images), 96 MB (videos) or 32 MB (audio) keep a styled placeholder. The grid/list
+  choice is remembered separately for each library (`skyvaultViewMode:images`, etc.).
 - **Names and folders** — rename, move (also by dragging onto a folder),
   folder creation. A folder is moved together with its entire contents.
 - **Account** — the account menu downloads the recovery card and changes the master
@@ -353,6 +373,18 @@ Mechanics:
 - **Trash** — move, restore and permanent delete; empty everything.
 - **Context menu** (right mouse button) — open/preview, download, star, rename,
   move, details, trash; on an empty area — new folder, upload files and a directory, refresh.
+- **Color themes** — the sun icon opens a picker: Mono (default), Nord, Forest and Amber.
+  The selection applies instantly, is cached in `localStorage`, and is saved to the account
+  as an encrypted blob (`POST /api/auth/settings`), so the server never learns the chosen
+  theme, and the same user sees it on every device after signing in.
+- **Plans and expiry** — every plan is free and lasts **30 days** from the moment it is chosen.
+  The server owns the plan: it keeps `plan_started_at` / `plan_expires_at` in PostgreSQL and
+  writes a plain-text mirror with the plan, both dates and the active flag to
+  `data/plans.json` (no passwords, verifier hashes or keys). When the date passes, the server
+  marks the account inactive: `/api/auth/me` reports `planActive: false`, file and folder
+  endpoints return HTTP 403 with `PLAN_EXPIRED`, and the interface switches to the plans
+  screen with an **Account disabled** banner. Choosing any plan (including the current one)
+  starts a new 30-day period and unlocks the drive.
 - **Shortcuts** — `Ctrl+F` search, `F2` rename, `Delete` to trash, `Enter` open.
 
 The master key lives only in the tab's `sessionStorage`: closing the tab forgets the key,
@@ -419,7 +451,13 @@ Override: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
 > `DB_PASSWORD` from outside the repository.
 
 Flyway migrations live in `Server/src/main/resources/db/migration`. The schema is described by
-`V1__init_schema.sql` (tables `app_user`, `user_session`, `stored_file`).
+`V1__init_schema.sql` (tables `app_user`, `user_session`, `stored_file`),
+`V2__add_user_theme.sql` (the initial plaintext theme preference),
+`V3__encrypt_user_settings.sql` (encrypted `app_user.encrypted_settings` / `settings_iv`;
+the plaintext `theme` column is removed), `V4__add_user_plan.sql`
+(the `app_user.plan` field with the `free` / `plus` / `pro` values) and
+`V5__add_plan_expiry.sql` (`plan_started_at` / `plan_expires_at`; existing accounts get
+30 days from the migration).
 
 Flyway **is needed**: `spring.jpa.hibernate.ddl-auto=validate` checks at startup
 whether the entities match the schema. Without migrations, adding a new entity would make it
@@ -432,12 +470,22 @@ with the next number.
 
 Encrypted blobs go to `data/files/u{id}/`. The server writes the bytes exactly in the form
 in which it received them from the client — it has no key, so it cannot read them.
+
+The server also writes `data/plans.json`, a plain-text snapshot of plan state:
+`userId`, `email`, `plan`, `planStartedAt`, `planExpiresAt`, `active` and `secondsLeft`.
+It deliberately contains **no** password verifier, wrapped master key or encrypted settings.
+The file is refreshed at startup, after every plan change or registration, and every 30 s
+when an account expires. PostgreSQL remains the source of truth; the file is the readable,
+server-owned plan record and an audit trail.
+
 The `data/` directory is in `.gitignore`.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `SKYVAULT_DATA_DIR` | `data/files` | directory for blobs |
-| `DEFAULT_QUOTA_GB` | `5` | space limit per account |
+| `SKYVAULT_PLAN_FILE` | `data/plans.json` | plain-text plan state file |
+| `PLAN_STATE_REFRESH_MS` | `30000` | how often the expiry state is checked/written |
+| `DEFAULT_QUOTA_GB` | `5` | space limit per new account |
 
 ## Tests
 

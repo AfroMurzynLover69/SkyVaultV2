@@ -6,6 +6,36 @@
   const MAX_UPLOAD_BYTES = 100 * 1024 * 1024 - 4096;
   const PREVIEW_TEXT_LIMIT = 512 * 1024;
 
+  const THEMES = ['mono', 'nord', 'forest', 'amber'];
+
+  const PLANS = [
+    {
+      id: 'free',
+      name: 'Free',
+      storage: '5 GB',
+      tagline: 'A private drive for everyday files.',
+      features: ['5 GB encrypted storage', 'Zero-knowledge encryption', 'All devices and color themes',
+        'Trash and restore']
+    },
+    {
+      id: 'plus',
+      name: 'Plus',
+      storage: '200 GB',
+      recommended: true,
+      tagline: 'More room for photos, documents and backups.',
+      features: ['200 GB encrypted storage', 'Everything in Free', 'Room for photos and backups',
+        'The same zero-knowledge privacy']
+    },
+    {
+      id: 'pro',
+      name: 'Pro',
+      storage: '1 TB',
+      tagline: 'A full encrypted archive in the cloud.',
+      features: ['1 TB encrypted storage', 'Everything in Plus', 'Built for large archives',
+        'The same zero-knowledge privacy']
+    }
+  ];
+
   const VIEW_TITLES = {
     home: 'My Drive',
     computers: 'Computers',
@@ -16,7 +46,8 @@
     recent: 'Recent',
     starred: 'Starred',
     trash: 'Trash',
-    storage: 'Storage'
+    storage: 'Storage',
+    settings: 'Settings'
   };
 
   const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif', 'tiff', 'tif'];
@@ -35,6 +66,16 @@
     music: AUDIO_EXT
   };
 
+  const GALLERY_VIEWS = ['images', 'videos', 'music'];
+  const THUMBNAIL_LIMITS = {
+    image: 48 * 1024 * 1024,
+    video: 96 * 1024 * 1024,
+    audio: 32 * 1024 * 1024
+  };
+  const THUMBNAIL_MAX_EDGE = 720;
+  const THUMBNAIL_CONCURRENCY = 2;
+  const THUMBNAIL_CACHE_LIMIT = 80;
+
   const MIME_BY_EXT = {
     txt: 'text/plain;charset=utf-8', md: 'text/markdown;charset=utf-8', json: 'application/json',
     csv: 'text/csv;charset=utf-8', html: 'text/html;charset=utf-8', css: 'text/css;charset=utf-8',
@@ -52,6 +93,7 @@
   };
 
   const dateFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const dayFormatter = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' });
 
   const state = {
     user: null,
@@ -69,13 +111,102 @@
     authMode: 'login',
     sessionStartedAt: null,
     uploading: false,
-    previewUrl: null
+    previewUrl: null,
+    planChanging: false,
+    pendingPlan: null,
+    planExpired: false
   };
 
   let modalResolver = null;
   let modalAllowEmpty = false;
   let menuActions = [];
   let notifyTimer = null;
+  let themeSaveQueue = Promise.resolve();
+
+  const thumbnailReady = new Map();
+  const thumbnailFailed = new Set();
+  const thumbnailPromises = new Map();
+  const thumbnailQueued = new Set();
+  const thumbnailOrder = [];
+  const thumbnailQueue = [];
+  let thumbnailObserver = null;
+  let thumbnailObserverTimer = null;
+  let thumbnailActive = 0;
+  let thumbnailEpoch = 0;
+  let thumbnailCacheEpoch = 0;
+
+  function applyTheme(name, persist) {
+    const theme = THEMES.indexOf(name) >= 0 ? name : 'mono';
+    document.documentElement.dataset.theme = theme;
+
+    document.querySelectorAll('[data-theme-option]').forEach((button) => {
+      button.setAttribute('aria-checked', button.dataset.themeOption === theme ? 'true' : 'false');
+    });
+
+    if (persist) {
+      try {
+        localStorage.setItem('skyvaultTheme', theme);
+      } catch (error) {
+        // Private mode or blocked storage: the theme still applies to this tab.
+      }
+    }
+  }
+
+  function setThemeMenu(open) {
+    $('themeMenu').hidden = !open;
+    $('themeButton').setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function persistTheme(theme) {
+    if (!state.inApp) {
+      return;
+    }
+
+    themeSaveQueue = themeSaveQueue
+      .catch(() => {})
+      .then(async () => {
+        const payload = await C.encryptSettings({ theme });
+        await api('/api/auth/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      })
+      .catch((error) => {
+        if (!error || error.status !== 401) {
+          notify('Theme saved only in this browser. The encrypted account setting could not be updated.', 'error');
+        }
+      });
+  }
+
+  async function applyProfileTheme(profile) {
+    if (!profile) {
+      return;
+    }
+
+    if (!profile.encryptedSettings || !profile.settingsIv) {
+      // Upgrade path: move a theme chosen before encrypted settings existed into the account.
+      let cached = null;
+      try {
+        cached = localStorage.getItem('skyvaultTheme');
+      } catch (error) {
+        cached = null;
+      }
+      if (cached && THEMES.indexOf(cached) >= 0) {
+        persistTheme(cached);
+      }
+      return;
+    }
+
+    try {
+      const settings = await C.decryptSettings(profile.encryptedSettings, profile.settingsIv);
+      if (settings && THEMES.indexOf(settings.theme) >= 0) {
+        applyTheme(settings.theme, true);
+      }
+    } catch (error) {
+      // Keep the cached theme when the account settings cannot be decrypted.
+    }
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -171,6 +302,14 @@
     return Number.isNaN(date.getTime()) ? '—' : dateFormatter.format(date);
   }
 
+  function formatDay(value) {
+    if (!value) {
+      return '—';
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '—' : dayFormatter.format(date);
+  }
+
   function countLabel(count) {
     return count + ' ' + plural(count, 'item', 'items');
   }
@@ -208,9 +347,10 @@
   }
 
   class ApiError extends Error {
-    constructor(status, message) {
+    constructor(status, message, code) {
       super(message);
       this.status = status;
+      this.code = code || null;
     }
   }
 
@@ -228,14 +368,21 @@
 
     if (!response.ok) {
       let message = 'The operation failed (' + response.status + ').';
+      let code = null;
       try {
         const payload = await response.json();
         if (payload && payload.message) {
           message = payload.message;
         }
+        if (payload && payload.code) {
+          code = payload.code;
+        }
       } catch (ignored) {
       }
-      throw new ApiError(response.status, message);
+      if (code === 'PLAN_EXPIRED') {
+        markPlanExpired();
+      }
+      throw new ApiError(response.status, message, code);
     }
 
     if (response.status === 204) {
@@ -274,6 +421,20 @@
     notifyTimer = setTimeout(() => {
       toast.hidden = true;
     }, 4600);
+  }
+
+  function markPlanExpired() {
+    if (!state.inApp || !state.user || state.user.planActive === false) {
+      return;
+    }
+    state.user.planActive = false;
+    state.planExpired = true;
+    state.view = 'settings';
+    state.path = '';
+    state.loading = false;
+    updateAccountUI();
+    render();
+    notify('Your plan has expired. The account is disabled until you choose a plan again.', 'error');
   }
 
   function showAuthMessage(message) {
@@ -397,12 +558,16 @@
   function enterApp(profile) {
     state.user = profile;
     state.inApp = true;
+    state.planExpired = profile.planActive === false;
+    applyProfileTheme(profile);
     state.sessionStartedAt = Date.now();
-    state.view = 'home';
+    state.view = state.planExpired ? 'settings' : 'home';
+    state.viewMode = storedViewMode(state.view);
+    syncViewModeButtons();
     state.path = '';
     state.selectedHash = null;
     state.search = '';
-    state.loading = true;
+    state.loading = !state.planExpired;
     $('searchInput').value = '';
     $('authScreen').hidden = true;
     $('appScreen').hidden = false;
@@ -410,17 +575,23 @@
     hideAuthMessage();
     updateAccountUI();
     render();
-    refreshDataSafe(true);
+    if (!state.planExpired) {
+      refreshDataSafe(true);
+    } else {
+      notify('The plan has expired. The account is disabled — choose a plan to reactivate it.', 'error');
+    }
   }
 
   function resetToAuth(message) {
     state.inApp = false;
     state.user = null;
+    state.planExpired = false;
     state.files = [];
     state.trash = [];
     state.loading = false;
     state.uploading = false;
     state.selectedHash = null;
+    clearThumbnailCache();
     C.clearMasterKey();
     closePasswordChange();
     closeContextMenu();
@@ -583,13 +754,22 @@
       render();
     }
 
-    const [profile, active, trash] = await Promise.all([
-      api('/api/auth/me'),
+    const profile = await api('/api/auth/me');
+    state.user = profile;
+    state.planExpired = profile.planActive === false;
+    if (state.planExpired) {
+      state.loading = false;
+      state.view = 'settings';
+      updateAccountUI();
+      render();
+      return;
+    }
+
+    const [active, trash] = await Promise.all([
       api('/api/files'),
       api('/api/files/trash')
     ]);
 
-    state.user = profile;
     state.files = await decryptEntries(active);
     state.trash = await decryptEntries(trash);
     state.loading = false;
@@ -719,11 +899,32 @@
       return;
     }
 
+    if (state.planExpired && state.view !== 'settings') {
+      state.view = 'settings';
+      state.path = '';
+      state.selectedHash = null;
+    }
+
+    const galleryView = isGalleryView(state.view) && state.viewMode === 'grid';
+    const workspace = document.querySelector('.workspace');
+    if (workspace) {
+      workspace.classList.toggle('is-gallery-view', galleryView);
+    }
+
     updateAccountUI();
     updateToolbar();
     updateNav();
     updateBreadcrumbs();
     $('workspaceTitle').textContent = viewTitle();
+    $('settingsPanel').hidden = state.view !== 'settings';
+
+    if (state.view === 'settings') {
+      $('filesSurface').hidden = true;
+      $('storageView').hidden = true;
+      $('computersView').hidden = true;
+      renderSettings();
+      return;
+    }
 
     if (state.view === 'storage') {
       $('filesSurface').hidden = true;
@@ -764,7 +965,7 @@
   }
 
   function updateToolbar() {
-    const fileView = state.view !== 'storage' && state.view !== 'computers';
+    const fileView = state.view !== 'storage' && state.view !== 'computers' && state.view !== 'settings';
     $('filters').hidden = !fileView || state.view === 'trash';
     $('sectionHead').hidden = !fileView;
     const locationRow = document.querySelector('.location-row');
@@ -842,26 +1043,193 @@
     const quota = Number(user.quotaBytes) || 0;
     const percent = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
     const usage = formatBytes(used) + ' of ' + formatBytes(quota) + ' (' + percent.toFixed(1) + '%)';
+    const plan = planFor(user.plan);
+    const active = user.planActive !== false;
+    const expires = formatDay(user.planExpiresAt);
 
     $('accountEmail').textContent = user.email;
-    $('accountUsage').textContent = usage;
+    $('accountPlan').textContent = active
+      ? plan.name + ' plan · ' + plan.storage + ' · until ' + expires
+      : plan.name + ' plan · expired ' + expires;
+    $('accountPlan').classList.toggle('is-expired', !active);
+    $('accountUsage').textContent = active
+      ? usage
+      : 'Account disabled — plan expired. Choose a plan to reactivate.';
     $('sidebarUsage').textContent = formatBytes(used) + ' of ' + formatBytes(quota);
-    $('settingsUsage').textContent = usage;
     $('sidebarMeter').style.width = percent + '%';
     $('accountMeter').style.width = percent + '%';
-    $('settingsMeter').style.width = percent + '%';
+  }
+
+  function planFor(id) {
+    return PLANS.find((plan) => plan.id === id) || PLANS[0];
+  }
+
+  function renderSettings() {
+    const user = state.user || {};
+    const current = planFor(user.plan);
+    const used = Number(user.usedBytes) || 0;
+    const quota = Number(user.quotaBytes) || 0;
+    const percent = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
+    const active = user.planActive !== false;
+    const expires = formatDay(user.planExpiresAt);
+    const expiresAt = user.planExpiresAt ? new Date(user.planExpiresAt).getTime() : 0;
+    const daysLeft = expiresAt > Date.now()
+      ? Math.max(1, Math.round((expiresAt - Date.now()) / 86400000))
+      : 0;
+
+    const cards = PLANS.map((plan) => {
+      const isCurrent = user.plan === plan.id;
+      const isPending = state.pendingPlan === plan.id;
+      const isRecommended = Boolean(plan.recommended) && !isCurrent;
+      const isExpiredCurrent = isCurrent && !active;
+      const badge = isExpiredCurrent
+        ? '<span class="plan-badge is-expired">Expired</span>'
+        : (isCurrent
+          ? '<span class="plan-badge is-current">Current plan</span>'
+          : (isRecommended ? '<span class="plan-badge">Recommended</span>' : ''));
+      let label;
+      if (isPending) {
+        label = 'Switching...';
+      } else if (isCurrent && active) {
+        label = 'Current plan';
+      } else if (isExpiredCurrent) {
+        label = 'Renew ' + plan.name + ' for 30 days';
+      } else {
+        label = 'Choose ' + plan.name;
+      }
+      const buttonClass = plan.recommended ? 'primary' : 'secondary';
+
+      return '<article class="plan-card' + (isCurrent && active ? ' is-current' : '')
+        + (isExpiredCurrent ? ' is-expired' : '')
+        + (isRecommended ? ' is-recommended' : '') + '">'
+        + badge
+        + '<h3>' + escapeHtml(plan.name) + '</h3>'
+        + '<p class="plan-tagline">' + escapeHtml(plan.tagline) + '</p>'
+        + '<p class="plan-price"><strong>0 zł</strong><span>/ 30 days</span></p>'
+        + '<p class="plan-price-note">'
+        + (isCurrent && active
+          ? 'Active until ' + expires
+          : (isExpiredCurrent ? 'Expired on ' + expires : 'A fresh 30-day period'))
+        + '</p>'
+        + '<p class="plan-storage">' + escapeHtml(plan.storage)
+        + '<span>encrypted storage</span></p>'
+        + '<ul class="plan-features">'
+        + plan.features.map((feature) =>
+          '<li><svg class="icon"><use href="#i-check"></use></svg><span>'
+          + escapeHtml(feature) + '</span></li>').join('')
+        + '</ul>'
+        + '<button class="' + buttonClass + ' plan-select" type="button" data-plan="' + plan.id + '"'
+        + ((isCurrent && active) || state.planChanging ? ' disabled' : '') + '>'
+        + escapeHtml(label) + '</button>'
+        + '</article>';
+    }).join('');
+
+    const lockBanner = active ? ''
+      : '<div class="plan-lock">'
+        + '<strong>Account disabled</strong>'
+        + '<p>The plan expired on ' + expires + '. Files, folders and uploads are locked. '
+        + 'Choose any plan to start a new 30-day period and reactivate the account.</p>'
+        + '</div>';
+
+    $('settingsPanel').innerHTML =
+      '<div class="settings-hero">'
+      + '<span class="settings-kicker">Plans &amp; storage</span>'
+      + (active ? '<h2>Choose your plan</h2>' : '<h2>Your plan has expired</h2>')
+      + '<p>'
+      + (active
+        ? 'Every plan is free and gives you 30 days of access. Change your plan at any time — '
+          + 'your encrypted files stay exactly where they are.'
+        : 'The account is disabled until you renew. Pick any plan to get another 30 days, free, '
+          + 'with the same encrypted files waiting for you.')
+      + '</p>'
+      + '</div>'
+      + lockBanner
+      + '<section class="plan-summary">'
+      + '<div class="plan-summary-copy">'
+      + '<span class="plan-summary-label">' + (active ? 'Your plan' : 'Account status') + '</span>'
+      + '<strong>' + escapeHtml(current.name) + ' · ' + escapeHtml(current.storage) + '</strong>'
+      + '<span class="plan-summary-detail">'
+      + (active
+        ? formatBytes(used) + ' of ' + formatBytes(quota) + ' used (' + percent.toFixed(1) + '%)'
+          + ' · active until ' + expires + ' · ' + daysLeft + ' ' + plural(daysLeft, 'day', 'days') + ' left'
+        : 'Expired on ' + expires + ' · disabled, files locked')
+      + '</span>'
+      + '</div>'
+      + '<div class="plan-summary-meter">'
+      + '<div class="meter"><span style="width:' + percent + '%"></span></div>'
+      + '<span class="plan-summary-note">'
+      + (active ? 'Storage limit from your current plan' : 'Renew any plan to unlock the drive')
+      + '</span>'
+      + '</div>'
+      + '</section>'
+      + '<div class="plan-grid">' + cards + '</div>'
+      + '<p class="settings-footnote">Each plan is valid for 30 days. Payments are not enabled yet, '
+      + 'so choosing a plan costs 0 zł and resets the 30-day period. The server stores the plan and '
+      + 'both dates in a plain-text state file and enforces them.</p>';
+  }
+
+  async function changePlan(planId) {
+    const wasExpired = Boolean(state.user && state.user.planActive === false);
+    if (!state.user || state.planChanging
+        || (state.user.plan === planId && !wasExpired)) {
+      return;
+    }
+
+    const plan = planFor(planId);
+    state.planChanging = true;
+    state.pendingPlan = planId;
+    renderSettings();
+
+    try {
+      await api('/api/auth/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planId })
+      });
+      state.user = await api('/api/auth/me');
+      state.planExpired = state.user.planActive === false;
+      notify(
+        state.planExpired
+          ? 'The plan could not be reactivated.'
+          : (wasExpired
+            ? 'Account reactivated. ' + plan.name + ' is active for the next 30 days.'
+            : 'Plan changed to ' + plan.name + '. Active for 30 days.'),
+        state.planExpired ? 'error' : 'success'
+      );
+    } catch (error) {
+      notify(error.message || 'Could not change the plan.', 'error');
+    } finally {
+      state.planChanging = false;
+      state.pendingPlan = null;
+      if (state.inApp) {
+        updateAccountUI();
+        render();
+        if (!state.planExpired && wasExpired) {
+          refreshDataSafe(false);
+        }
+      }
+    }
   }
 
   function renderFiles(entries) {
     const surface = $('filesSurface');
+    const gallery = isGalleryView(state.view) && state.viewMode === 'grid';
     surface.dataset.viewMode = state.viewMode;
+    surface.classList.toggle('is-gallery', gallery);
+    resetThumbnailQueue();
 
     if (!entries.length) {
       surface.innerHTML = emptyState();
       return;
     }
 
-    surface.innerHTML = state.viewMode === 'grid' ? gridMarkup(entries) : tableMarkup(entries);
+    surface.innerHTML = state.viewMode === 'grid'
+      ? gridMarkup(entries, gallery)
+      : tableMarkup(entries);
+
+    if (gallery) {
+      setupThumbnailObserver();
+    }
   }
 
   function emptyState() {
@@ -933,28 +1301,1047 @@
       + '</tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
-  function gridMarkup(entries) {
-    const cards = entries.map((entry) => {
-      const icon = iconFor(entry);
-      const selected = entry.pathHash === state.selectedHash ? ' is-selected' : '';
-      const parts = entry.path.split('/');
-      const location = state.view === 'home' || parts.length < 2
-        ? ''
-        : parts.slice(0, -1).join(' / ');
-      const meta = entry.isFolder
-        ? 'Folder' + (location ? ' · ' + location : '')
-        : formatBytes(entry.sizeBytes) + (location ? ' · ' + location : '');
+  function gridMarkup(entries, gallery) {
+    const cards = entries.map((entry) => gallery ? galleryCardMarkup(entry) : standardCardMarkup(entry)).join('');
+    return '<div class="files-grid' + (gallery ? ' is-gallery' : '') + '">' + cards + '</div>';
+  }
 
-      return '<div class="file-card' + selected + '" data-hash="' + entry.pathHash + '" draggable="true">'
-        + '<div class="file-card-preview"><svg class="icon"><use href="#' + icon + '"></use></svg></div>'
-        + '<div class="file-card-body">'
-        + '<button type="button" class="file-card-name" data-select="' + entry.pathHash + '" title="'
-        + escapeHtml(entry.path) + '">' + escapeHtml(entry.name) + '</button>'
-        + '<span class="file-card-meta">' + escapeHtml(meta) + '</span>'
-        + '</div></div>';
-    }).join('');
+  function standardCardMarkup(entry) {
+    const icon = iconFor(entry);
+    const selected = entry.pathHash === state.selectedHash ? ' is-selected' : '';
+    const parts = entry.path.split('/');
+    const location = state.view === 'home' || parts.length < 2
+      ? ''
+      : parts.slice(0, -1).join(' / ');
+    const meta = entry.isFolder
+      ? 'Folder' + (location ? ' · ' + location : '')
+      : formatBytes(entry.sizeBytes) + (location ? ' · ' + location : '');
 
-    return '<div class="files-grid">' + cards + '</div>';
+    return '<div class="file-card' + selected + '" data-hash="' + entry.pathHash + '" draggable="true">'
+      + '<div class="file-card-preview"><svg class="icon"><use href="#' + icon + '"></use></svg></div>'
+      + '<div class="file-card-body">'
+      + '<button type="button" class="file-card-name" data-select="' + entry.pathHash + '" title="'
+      + escapeHtml(entry.path) + '">' + escapeHtml(entry.name) + '</button>'
+      + '<span class="file-card-meta">' + escapeHtml(meta) + '</span>'
+      + '</div></div>';
+  }
+
+  function galleryCardMarkup(entry) {
+    const kind = mediaKind(entry);
+    const selected = entry.pathHash === state.selectedHash ? ' is-selected' : '';
+    const hue = mediaHue(entry);
+    const hue2 = (hue + 38) % 360;
+    const ext = extensionOf(entry.name);
+    const meta = formatBytes(entry.sizeBytes) + ' · ' + formatDay(entry.modifiedAt);
+
+    return '<article class="file-card media-card' + selected + '" data-hash="' + entry.pathHash
+      + '" draggable="true" style="--media-hue:' + hue + ';--media-hue-2:' + hue2 + '">'
+      + '<div class="media-frame">'
+      + '<button type="button" class="media-thumb is-loading" data-open="' + entry.pathHash
+      + '" data-thumb-hash="' + entry.pathHash + '" data-media-kind="' + kind
+      + '" aria-label="Preview ' + escapeHtml(entry.name) + '">'
+      + mediaPlaceholderMarkup(kind)
+      + '<span class="media-type">' + escapeHtml(ext.toUpperCase() || 'FILE') + '</span>'
+      + (kind === 'video' ? '<span class="media-play" aria-hidden="true"></span>' : '')
+      + '<span class="media-duration" hidden></span>'
+      + '</button>'
+      + '<button type="button" class="media-menu icon-button" data-menu="' + entry.pathHash
+      + '" aria-label="More"><svg class="icon"><use href="#i-dots"></use></svg></button>'
+      + '</div>'
+      + '<div class="file-card-body">'
+      + '<button type="button" class="file-card-name" data-select="' + entry.pathHash + '" title="'
+      + escapeHtml(entry.path) + '">' + escapeHtml(entry.name) + '</button>'
+      + '<span class="file-card-meta">' + escapeHtml(meta) + '</span>'
+      + '</div></article>';
+  }
+
+  function mediaPlaceholderMarkup(kind) {
+    const icon = kind === 'image' ? 'i-images' : (kind === 'video' ? 'i-videos' : 'i-music');
+    return '<span class="media-placeholder" aria-hidden="true">'
+      + (kind === 'audio'
+        ? '<span class="media-eq"><i></i><i></i><i></i><i></i><i></i></span>'
+        : '<svg class="icon"><use href="#' + icon + '"></use></svg>')
+      + '<span class="media-placeholder-label">' + (kind === 'audio' ? 'Reading audio' : 'Building preview')
+      + '</span></span>';
+  }
+
+  function mediaKind(entry) {
+    if (!entry || entry.isFolder) {
+      return '';
+    }
+    const ext = extensionOf(entry.name);
+    if (IMAGE_EXT.indexOf(ext) >= 0) {
+      return 'image';
+    }
+    if (VIDEO_EXT.indexOf(ext) >= 0) {
+      return 'video';
+    }
+    if (AUDIO_EXT.indexOf(ext) >= 0) {
+      return 'audio';
+    }
+    return '';
+  }
+
+  function mediaHue(entry) {
+    const value = String(entry && entry.pathHash ? entry.pathHash : '');
+    const seed = parseInt(value.slice(0, 6), 16);
+    return Number.isFinite(seed) ? seed % 360 : 210;
+  }
+
+  function formatDuration(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value <= 0) {
+      return '';
+    }
+    const total = Math.round(value);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+    if (hours > 0) {
+      return hours + ':' + String(minutes).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+    }
+    return minutes + ':' + String(secs).padStart(2, '0');
+  }
+
+  function resetThumbnailQueue() {
+    thumbnailEpoch += 1;
+    thumbnailQueue.length = 0;
+    thumbnailQueued.clear();
+    if (thumbnailObserverTimer) {
+      clearTimeout(thumbnailObserverTimer);
+      thumbnailObserverTimer = null;
+    }
+    if (thumbnailObserver) {
+      thumbnailObserver.disconnect();
+      thumbnailObserver = null;
+    }
+  }
+
+  function clearThumbnailCache() {
+    clearThumbnailCacheInternal();
+    thumbnailCacheEpoch += 1;
+  }
+
+  function clearThumbnailCacheInternal() {
+    resetThumbnailQueue();
+    thumbnailReady.forEach((item) => {
+      if (item && item.url) {
+        URL.revokeObjectURL(item.url);
+      }
+    });
+    thumbnailReady.clear();
+    thumbnailFailed.clear();
+    thumbnailPromises.clear();
+    thumbnailOrder.length = 0;
+    thumbnailActive = 0;
+  }
+
+  function setupThumbnailObserver() {
+    const cards = Array.from(document.querySelectorAll('.media-thumb[data-thumb-hash]'));
+    if (!cards.length) {
+      return;
+    }
+
+    const root = document.querySelector('.workspace');
+    const observer = new IntersectionObserver((items) => {
+      items.forEach((item) => {
+        if (!item.isIntersecting) {
+          return;
+        }
+        observer.unobserve(item.target);
+        const entry = findEntry(item.target.dataset.thumbHash);
+        if (entry) {
+          enqueueThumbnail(entry);
+        }
+      });
+    }, { root: root || null, rootMargin: '420px 0px', threshold: 0.01 });
+    thumbnailObserver = observer;
+
+    const observedCards = [];
+    cards.forEach((card) => {
+      const hash = card.dataset.thumbHash;
+      if (thumbnailReady.has(hash)) {
+        applyThumbnail(card, thumbnailReady.get(hash));
+        return;
+      }
+      if (thumbnailFailed.has(hash)) {
+        markThumbnailFallback(card);
+        return;
+      }
+      const pending = thumbnailPromises.get(hash);
+      if (pending) {
+        pending.then((result) => {
+          if (result) {
+            applyThumbnail(card, result);
+          } else {
+            markThumbnailFallback(card);
+          }
+        });
+        return;
+      }
+      observer.observe(card);
+      observedCards.push(card);
+    });
+
+    if (observedCards.length) {
+      // Some embedded browsers pause IntersectionObserver callbacks when the
+      // window is occluded. Load the cards that are already in view anyway;
+      // off-screen cards still wait for the observer.
+      thumbnailObserverTimer = setTimeout(() => {
+        thumbnailObserverTimer = null;
+        if (thumbnailObserver !== observer) {
+          return;
+        }
+        const rootRect = (root || document.documentElement).getBoundingClientRect();
+        observedCards.forEach((card) => {
+          if (!card.isConnected) {
+            return;
+          }
+          const hash = card.dataset.thumbHash;
+          if (thumbnailReady.has(hash) || thumbnailFailed.has(hash)
+              || thumbnailPromises.has(hash) || thumbnailQueued.has(hash)) {
+            return;
+          }
+          const rect = card.getBoundingClientRect();
+          if (rect.bottom < rootRect.top - 420 || rect.top > rootRect.bottom + 420) {
+            return;
+          }
+          observer.unobserve(card);
+          const entry = findEntry(hash);
+          if (entry) {
+            enqueueThumbnail(entry);
+          }
+        });
+      }, 1200);
+    }
+  }
+
+  function enqueueThumbnail(entry) {
+    const hash = entry.pathHash;
+    if (thumbnailReady.has(hash) || thumbnailFailed.has(hash)
+        || thumbnailPromises.has(hash) || thumbnailQueued.has(hash)) {
+      return;
+    }
+    thumbnailQueued.add(hash);
+    thumbnailQueue.push({ entry: entry, epoch: thumbnailEpoch });
+    pumpThumbnailQueue();
+  }
+
+  function pumpThumbnailQueue() {
+    while (thumbnailActive < THUMBNAIL_CONCURRENCY && thumbnailQueue.length) {
+      const job = thumbnailQueue.shift();
+      const hash = job.entry.pathHash;
+      thumbnailQueued.delete(hash);
+      if (job.epoch !== thumbnailEpoch || thumbnailReady.has(hash)
+          || thumbnailFailed.has(hash) || thumbnailPromises.has(hash)) {
+        continue;
+      }
+
+      const cacheEpoch = thumbnailCacheEpoch;
+      thumbnailActive += 1;
+      const promise = generateThumbnail(job.entry)
+        .catch(() => null)
+        .then((result) => {
+          if (cacheEpoch !== thumbnailCacheEpoch) {
+            if (result && result.url) {
+              URL.revokeObjectURL(result.url);
+            }
+            return null;
+          }
+          if (result && result.url) {
+            rememberThumbnail(hash, result);
+            return result;
+          }
+          thumbnailFailed.add(hash);
+          return null;
+        })
+        .then((result) => {
+          if (job.epoch === thumbnailEpoch) {
+            applyThumbnailToVisible(hash, result);
+          }
+          return result;
+        })
+        .finally(() => {
+          thumbnailPromises.delete(hash);
+          thumbnailActive = Math.max(0, thumbnailActive - 1);
+          pumpThumbnailQueue();
+        });
+      thumbnailPromises.set(hash, promise);
+    }
+  }
+
+  function rememberThumbnail(hash, result) {
+    thumbnailReady.set(hash, result);
+    thumbnailOrder.push(hash);
+    while (thumbnailOrder.length > THUMBNAIL_CACHE_LIMIT) {
+      const oldest = thumbnailOrder.shift();
+      if (oldest === hash) {
+        continue;
+      }
+      const cached = thumbnailReady.get(oldest);
+      if (cached && cached.url) {
+        URL.revokeObjectURL(cached.url);
+      }
+      thumbnailReady.delete(oldest);
+    }
+  }
+
+  function applyThumbnailToVisible(hash, result) {
+    document.querySelectorAll('.media-thumb[data-thumb-hash="' + hash + '"]').forEach((card) => {
+      if (result) {
+        applyThumbnail(card, result);
+      } else {
+        markThumbnailFallback(card);
+      }
+    });
+  }
+
+  function applyThumbnail(card, result) {
+    if (!card || !result || !result.url) {
+      markThumbnailFallback(card);
+      return;
+    }
+
+    card.classList.remove('is-loading', 'is-fallback');
+    card.classList.toggle('is-audio', result.kind === 'audio');
+    if (result.kind) {
+      card.dataset.mediaKind = result.kind;
+    }
+
+    const duration = card.querySelector('.media-duration');
+    const durationLabel = formatDuration(result.duration);
+    if (duration && durationLabel) {
+      duration.textContent = durationLabel;
+      duration.hidden = false;
+    }
+
+    let image = card.querySelector('.media-image');
+    if (!image) {
+      image = document.createElement('img');
+      image.className = 'media-image';
+      image.alt = '';
+      image.decoding = 'async';
+      image.draggable = false;
+      image.addEventListener('load', () => card.classList.add('is-ready'), { once: true });
+      image.addEventListener('error', () => {
+        image.remove();
+        markThumbnailFallback(card);
+      }, { once: true });
+      card.prepend(image);
+      image.src = result.url;
+    }
+
+    if (image.complete && image.naturalWidth) {
+      card.classList.add('is-ready');
+    }
+  }
+
+  function markThumbnailFallback(card) {
+    if (!card) {
+      return;
+    }
+    card.classList.remove('is-loading');
+    card.classList.add('is-fallback');
+    const label = card.querySelector('.media-placeholder-label');
+    if (label) {
+      label.textContent = 'Preview unavailable';
+    }
+  }
+
+  async function generateThumbnail(entry) {
+    const kind = mediaKind(entry);
+    if (!kind) {
+      return null;
+    }
+    const limit = THUMBNAIL_LIMITS[kind];
+    if (limit && Number(entry.sizeBytes || 0) > limit) {
+      return null;
+    }
+
+    const bytes = await fetchPlain(entry);
+    if (!bytes || !bytes.length) {
+      return null;
+    }
+
+    const ext = extensionOf(entry.name);
+    if (kind === 'image') {
+      const image = await rasterizeImage(new Blob([bytes], { type: mimeFor(ext) }));
+      return { kind: 'image', url: image.url, duration: 0 };
+    }
+    if (kind === 'video') {
+      return videoPoster(bytes, ext);
+    }
+    return audioArtwork(entry, bytes, ext);
+  }
+
+  async function rasterizeImage(blob) {
+    let source = null;
+    try {
+      source = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+    } catch (error) {
+      try {
+        source = await createImageBitmap(blob);
+      } catch (fallbackError) {
+        source = await loadImageElement(blob);
+      }
+    }
+
+    const width = source.width || source.naturalWidth || 0;
+    const height = source.height || source.naturalHeight || 0;
+    if (!width || !height) {
+      if (source.close) {
+        source.close();
+      }
+      throw new Error('The image has no visible dimensions');
+    }
+
+    const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    if (source.close) {
+      source.close();
+    }
+
+    return { url: await canvasUrl(canvas), width: width, height: height };
+  }
+
+  function loadImageElement(blob) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const image = new Image();
+      image.decoding = 'async';
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('This image format cannot be previewed'));
+      };
+      image.src = url;
+    });
+  }
+
+  function drawToCanvas(source, width, height) {
+    if (!width || !height) {
+      return null;
+    }
+    const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function canvasBlob(canvas) {
+    return new Promise((resolve) => {
+      if (!canvas.toBlob) {
+        resolve(null);
+        return;
+      }
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+        canvas.toBlob(resolve, 'image/jpeg', 0.84);
+      }, 'image/webp', 0.82);
+    });
+  }
+
+  async function canvasUrl(canvas) {
+    const blob = await canvasBlob(canvas);
+    if (!blob) {
+      throw new Error('Could not encode the preview');
+    }
+    return URL.createObjectURL(blob);
+  }
+
+  function waitForMediaEvent(media, type, timeoutMs) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        finish(new Error('Preparing the preview timed out'));
+      }, timeoutMs);
+
+      function cleanup() {
+        clearTimeout(timer);
+        media.removeEventListener(type, onEvent);
+        media.removeEventListener('error', onError);
+      }
+
+      function finish(error) {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        if (error) {
+          reject(error);
+        } else {
+          resolve();
+        }
+      }
+
+      function onEvent() {
+        finish(null);
+      }
+
+      function onError() {
+        finish(new Error('This format cannot be previewed by the browser'));
+      }
+
+      media.addEventListener(type, onEvent);
+      media.addEventListener('error', onError);
+    });
+  }
+
+  function nextVideoFrame(video) {
+    return new Promise((resolve) => {
+      if (!video.requestVideoFrameCallback) {
+        setTimeout(resolve, 180);
+        return;
+      }
+      let settled = false;
+      const done = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve();
+      };
+      const handle = video.requestVideoFrameCallback(done);
+      setTimeout(() => {
+        if (!settled && video.cancelVideoFrameCallback) {
+          try {
+            video.cancelVideoFrameCallback(handle);
+          } catch (error) {
+            // The callback may already be running.
+          }
+        }
+        done();
+      }, 900);
+    });
+  }
+
+  async function videoPoster(bytes, ext) {
+    const blob = new Blob([bytes], { type: mimeFor(ext) });
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.style.cssText = 'position:fixed;left:-10000px;top:0;width:2px;height:2px;'
+      + 'opacity:0;pointer-events:none;';
+    document.body.appendChild(video);
+
+    try {
+      const metadata = waitForMediaEvent(video, 'loadedmetadata', 15000);
+      video.src = url;
+      video.load();
+      await metadata;
+
+      let duration = Number.isFinite(video.duration) ? video.duration : 0;
+      if (!duration) {
+        // MediaRecorder WebM files report an unknown duration until the browser
+        // seeks past the end. This also makes the poster seek reliable.
+        await new Promise((resolve) => {
+          let settled = false;
+          const finish = () => {
+            if (settled) {
+              return;
+            }
+            settled = true;
+            clearTimeout(timer);
+            video.removeEventListener('durationchange', finish);
+            resolve();
+          };
+          const timer = setTimeout(finish, 1800);
+          video.addEventListener('durationchange', finish);
+          try {
+            video.currentTime = 1e101;
+          } catch (error) {
+            finish();
+          }
+        });
+        duration = Number.isFinite(video.duration) ? video.duration : 0;
+      }
+      const seekTo = duration > 0.2 ? Math.min(1.5, Math.max(0.1, duration * 0.15)) : 0.1;
+      const seeked = waitForMediaEvent(video, 'seeked', 9000);
+      try {
+        video.currentTime = seekTo;
+      } catch (error) {
+        // Draw whatever frame is available when seeking is not supported.
+      }
+      await seeked.catch(() => {});
+      await nextVideoFrame(video);
+
+      const canvas = drawToCanvas(video, video.videoWidth || 1280, video.videoHeight || 720);
+      if (!canvas) {
+        return null;
+      }
+      return { kind: 'video', url: await canvasUrl(canvas), duration: duration };
+    } finally {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      video.remove();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function audioArtwork(entry, bytes, ext) {
+    const artwork = embeddedArtwork(bytes, ext);
+    if (artwork && artwork.bytes && artwork.bytes.length) {
+      try {
+        const image = await rasterizeImage(new Blob([artwork.bytes], { type: artwork.mime || 'image/jpeg' }));
+        const duration = await probeAudioDuration(bytes, ext);
+        return { kind: 'audio', url: image.url, duration: duration };
+      } catch (error) {
+        // Fall back to a generated waveform.
+      }
+    }
+    return waveformArtwork(entry, bytes);
+  }
+
+  async function probeAudioDuration(bytes, ext) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeFor(ext) }));
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
+    audio.muted = true;
+    audio.style.cssText = 'position:fixed;left:-10000px;top:0;width:1px;height:1px;'
+      + 'opacity:0;pointer-events:none;';
+    document.body.appendChild(audio);
+    try {
+      const metadata = waitForMediaEvent(audio, 'loadedmetadata', 6000);
+      audio.src = url;
+      audio.load();
+      await metadata;
+      return Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+    } catch (error) {
+      return 0;
+    } finally {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      audio.remove();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function waveformArtwork(entry, bytes) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      return null;
+    }
+    let context;
+    try {
+      context = new AudioContextClass();
+    } catch (error) {
+      return null;
+    }
+    try {
+      const buffer = await decodeAudioData(context, bytes);
+      if (!buffer || !buffer.length) {
+        return null;
+      }
+      const canvas = drawWaveform(entry, buffer);
+      return { kind: 'audio', url: await canvasUrl(canvas), duration: buffer.duration };
+    } catch (error) {
+      return null;
+    } finally {
+      context.close().catch(() => {});
+    }
+  }
+
+  function decodeAudioData(context, bytes) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const succeed = (value) => {
+        if (!settled) {
+          settled = true;
+          resolve(value);
+        }
+      };
+      const fail = (error) => {
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
+      };
+      try {
+        const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        const result = context.decodeAudioData(copy, succeed, fail);
+        if (result && typeof result.then === 'function') {
+          result.then(succeed, fail);
+        }
+      } catch (error) {
+        fail(error);
+      }
+    });
+  }
+
+  function drawWaveform(entry, buffer) {
+    const width = 720;
+    const height = 540;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    const hue = mediaHue(entry);
+    const hue2 = (hue + 34) % 360;
+
+    const background = context.createLinearGradient(0, 0, width, height);
+    background.addColorStop(0, 'hsl(' + hue + ', 54%, 34%)');
+    background.addColorStop(0.55, 'hsl(' + hue2 + ', 44%, 18%)');
+    background.addColorStop(1, '#0d1216');
+    context.fillStyle = background;
+    context.fillRect(0, 0, width, height);
+
+    const glow = context.createRadialGradient(
+      width * 0.78, height * 0.18, 0, width * 0.78, height * 0.18, width * 0.72);
+    glow.addColorStop(0, 'hsla(' + hue2 + ', 86%, 70%, 0.34)');
+    glow.addColorStop(1, 'hsla(' + hue2 + ', 86%, 70%, 0)');
+    context.fillStyle = glow;
+    context.fillRect(0, 0, width, height);
+
+    context.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+    context.lineWidth = 1;
+    for (let y = 90; y < height; y += 90) {
+      context.beginPath();
+      context.moveTo(0, y);
+      context.lineTo(width, y);
+      context.stroke();
+    }
+
+    const data = buffer.getChannelData(0);
+    const bars = 64;
+    const gap = 5;
+    const side = 48;
+    const barWidth = (width - side * 2 - gap * (bars - 1)) / bars;
+    const center = height * 0.53;
+    const maxBarHeight = height * 0.58;
+    const step = Math.max(1, Math.floor(data.length / bars));
+    const peaks = new Array(bars).fill(0);
+    let maximum = 0;
+
+    for (let index = 0; index < bars; index += 1) {
+      const start = index * step;
+      const end = Math.min(data.length, start + step);
+      let peak = 0;
+      for (let sample = start; sample < end; sample += 1) {
+        const value = Math.abs(data[sample]);
+        if (value > peak) {
+          peak = value;
+        }
+      }
+      peaks[index] = peak;
+      if (peak > maximum) {
+        maximum = peak;
+      }
+    }
+
+    const normalize = maximum > 0 ? 1 / maximum : 0;
+    for (let index = 0; index < bars; index += 1) {
+      const normalized = Math.pow(peaks[index] * normalize, 0.72);
+      const barHeight = Math.max(5, normalized * maxBarHeight);
+      const x = side + index * (barWidth + gap);
+      const y = center - barHeight / 2;
+      context.fillStyle = index % 2 === 0
+        ? 'rgba(255, 255, 255, 0.84)'
+        : 'rgba(255, 255, 255, 0.62)';
+      roundedRect(context, x, y, barWidth, barHeight, Math.min(barWidth / 2, 4));
+      context.fill();
+    }
+
+    return canvas;
+  }
+
+  function roundedRect(context, x, y, width, height, radius) {
+    context.beginPath();
+    if (typeof context.roundRect === 'function') {
+      context.roundRect(x, y, width, height, radius);
+      return;
+    }
+    const r = Math.min(radius, width / 2, height / 2);
+    context.moveTo(x + r, y);
+    context.arcTo(x + width, y, x + width, y + height, r);
+    context.arcTo(x + width, y + height, x, y + height, r);
+    context.arcTo(x, y + height, x, y, r);
+    context.arcTo(x, y, x + width, y, r);
+    context.closePath();
+  }
+
+  function embeddedArtwork(bytes, ext) {
+    const id3 = id3Artwork(bytes);
+    if (id3) {
+      return id3;
+    }
+    if (ext === 'flac') {
+      return flacArtwork(bytes);
+    }
+    if (ext === 'm4a' || ext === 'mp4') {
+      return mp4Artwork(bytes);
+    }
+    return null;
+  }
+
+  function id3Artwork(bytes) {
+    if (bytes.length < 10 || asciiAt(bytes, 0, 3) !== 'ID3') {
+      return null;
+    }
+    const version = bytes[3];
+    if (version < 2 || version > 4) {
+      return null;
+    }
+    const flags = bytes[5];
+    const tagEnd = Math.min(bytes.length, 10 + readSyncSafe(bytes, 6));
+    let position = 10;
+
+    if (flags & 0x40) {
+      if (version === 3) {
+        position += readUint32BE(bytes, position) + 4;
+      } else if (version === 4) {
+        position += readSyncSafe(bytes, position);
+      }
+    }
+
+    while (position + 6 <= tagEnd) {
+      const headerSize = version === 2 ? 6 : 10;
+      if (position + headerSize > tagEnd) {
+        break;
+      }
+      const id = asciiAt(bytes, position, version === 2 ? 3 : 4);
+      if (!/^[A-Z0-9]+$/.test(id)) {
+        break;
+      }
+      const size = version === 2
+        ? ((bytes[position + 3] << 16) | (bytes[position + 4] << 8) | bytes[position + 5])
+        : (version === 4 ? readSyncSafe(bytes, position + 4) : readUint32BE(bytes, position + 4));
+      const bodyStart = position + headerSize;
+      if (size <= 0 || bodyStart + size > tagEnd) {
+        break;
+      }
+      if (id === 'APIC') {
+        return parseApic(bytes, bodyStart, bodyStart + size);
+      }
+      if (id === 'PIC') {
+        return parsePic(bytes, bodyStart, bodyStart + size);
+      }
+      position = bodyStart + size;
+    }
+    return null;
+  }
+
+  function parseApic(bytes, start, end) {
+    let position = start;
+    const encoding = bytes[position];
+    position += 1;
+    const mimeEnd = findByte(bytes, 0, position, end);
+    if (mimeEnd < 0) {
+      return null;
+    }
+    let mime = asciiAt(bytes, position, mimeEnd - position).toLowerCase();
+    if (!mime || mime === 'image/jpg') {
+      mime = mime === 'image/jpg' ? 'image/jpeg' : 'image/jpeg';
+    }
+    position = mimeEnd + 1 + 1;
+    const descriptionEnd = findTextTerminator(bytes, position, end, encoding);
+    if (descriptionEnd < 0) {
+      return null;
+    }
+    position = descriptionEnd + ((encoding === 1 || encoding === 2) ? 2 : 1);
+    if (position >= end) {
+      return null;
+    }
+    const image = bytes.slice(position, end);
+    return { bytes: image, mime: sniffImageMime(image) || mime || 'image/jpeg' };
+  }
+
+  function parsePic(bytes, start, end) {
+    let position = start;
+    const format = asciiAt(bytes, position, 3).toLowerCase();
+    position += 3 + 1;
+    const descriptionEnd = findByte(bytes, 0, position, end);
+    if (descriptionEnd < 0) {
+      return null;
+    }
+    position = descriptionEnd + 1;
+    if (position >= end) {
+      return null;
+    }
+    const image = bytes.slice(position, end);
+    const mime = format === 'png' ? 'image/png' : 'image/jpeg';
+    return { bytes: image, mime: sniffImageMime(image) || mime };
+  }
+
+  function flacArtwork(bytes) {
+    if (bytes.length < 8 || asciiAt(bytes, 0, 4) !== 'fLaC') {
+      return null;
+    }
+    let position = 4;
+    while (position + 4 <= bytes.length) {
+      const header = bytes[position];
+      const last = Boolean(header & 0x80);
+      const type = header & 0x7f;
+      const size = (bytes[position + 1] << 16) | (bytes[position + 2] << 8) | bytes[position + 3];
+      const start = position + 4;
+      const end = Math.min(bytes.length, start + size);
+      if (end <= start) {
+        break;
+      }
+      if (type === 6) {
+        return parseFlacPicture(bytes, start, end);
+      }
+      position = end;
+      if (last) {
+        break;
+      }
+    }
+    return null;
+  }
+
+  function parseFlacPicture(bytes, start, end) {
+    let position = start;
+    if (position + 8 > end) {
+      return null;
+    }
+    position += 4;
+    const mimeLength = readUint32BE(bytes, position);
+    position += 4;
+    if (position + mimeLength > end) {
+      return null;
+    }
+    let mime = asciiAt(bytes, position, mimeLength).toLowerCase();
+    position += mimeLength;
+    if (position + 4 > end) {
+      return null;
+    }
+    const descriptionLength = readUint32BE(bytes, position);
+    position += 4 + descriptionLength + 16;
+    if (position + 4 > end) {
+      return null;
+    }
+    const dataLength = readUint32BE(bytes, position);
+    position += 4;
+    if (position + dataLength > end || dataLength <= 0) {
+      return null;
+    }
+    const image = bytes.slice(position, position + dataLength);
+    return { bytes: image, mime: sniffImageMime(image) || mime || 'image/jpeg' };
+  }
+
+  function mp4Artwork(bytes) {
+    if (asciiAt(bytes, 4, 4) !== 'ftyp') {
+      return null;
+    }
+    const cover = indexOfAscii(bytes, 'covr', 0, Math.min(bytes.length, 4 * 1024 * 1024));
+    if (cover < 0) {
+      return null;
+    }
+    const data = indexOfAscii(bytes, 'data', cover + 4, Math.min(bytes.length, cover + 4096));
+    if (data < 4) {
+      return null;
+    }
+    const size = readUint32BE(bytes, data - 4);
+    if (size < 16) {
+      return null;
+    }
+    const start = data + 12;
+    const end = Math.min(bytes.length, data - 4 + size);
+    if (end <= start) {
+      return null;
+    }
+    const image = bytes.slice(start, end);
+    return { bytes: image, mime: sniffImageMime(image) || 'image/jpeg' };
+  }
+
+  function readUint32BE(bytes, offset) {
+    return ((bytes[offset] << 24) | (bytes[offset + 1] << 16)
+      | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+  }
+
+  function readSyncSafe(bytes, offset) {
+    return ((bytes[offset] & 0x7f) << 21)
+      | ((bytes[offset + 1] & 0x7f) << 14)
+      | ((bytes[offset + 2] & 0x7f) << 7)
+      | (bytes[offset + 3] & 0x7f);
+  }
+
+  function asciiAt(bytes, offset, length) {
+    let value = '';
+    for (let index = 0; index < length && offset + index < bytes.length; index += 1) {
+      value += String.fromCharCode(bytes[offset + index]);
+    }
+    return value;
+  }
+
+  function indexOfAscii(bytes, text, from, to) {
+    const start = Math.max(0, from || 0);
+    const end = Math.min(bytes.length, to == null ? bytes.length : to);
+    outer:
+    for (let index = start; index <= end - text.length; index += 1) {
+      for (let offset = 0; offset < text.length; offset += 1) {
+        if (bytes[index + offset] !== text.charCodeAt(offset)) {
+          continue outer;
+        }
+      }
+      return index;
+    }
+    return -1;
+  }
+
+  function findByte(bytes, value, from, to) {
+    const end = Math.min(bytes.length, to == null ? bytes.length : to);
+    for (let index = Math.max(0, from); index < end; index += 1) {
+      if (bytes[index] === value) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  function findTextTerminator(bytes, from, to, encoding) {
+    if (encoding === 1 || encoding === 2) {
+      for (let index = Math.max(0, from); index + 1 < to; index += 1) {
+        if (bytes[index] === 0 && bytes[index + 1] === 0) {
+          return index;
+        }
+      }
+      return -1;
+    }
+    return findByte(bytes, 0, from, to);
+  }
+
+  function sniffImageMime(bytes) {
+    if (!bytes || bytes.length < 4) {
+      return null;
+    }
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      return 'image/png';
+    }
+    if (asciiAt(bytes, 0, 6) === 'GIF87a' || asciiAt(bytes, 0, 6) === 'GIF89a') {
+      return 'image/gif';
+    }
+    if (asciiAt(bytes, 0, 4) === 'RIFF' && asciiAt(bytes, 8, 4) === 'WEBP') {
+      return 'image/webp';
+    }
+    if (asciiAt(bytes, 0, 2) === 'BM') {
+      return 'image/bmp';
+    }
+    return null;
   }
 
   function userInitial() {
@@ -1058,8 +2445,50 @@
       + '</div>';
   }
 
+  function isGalleryView(view) {
+    return GALLERY_VIEWS.indexOf(view) >= 0;
+  }
+
+  function viewModeStorageKey(view) {
+    return isGalleryView(view) ? 'skyvaultViewMode:' + view : 'skyvaultViewMode';
+  }
+
+  function storedViewMode(view) {
+    let stored = null;
+    try {
+      stored = localStorage.getItem(viewModeStorageKey(view));
+    } catch (error) {
+      stored = null;
+    }
+    if (stored === 'grid' || stored === 'list') {
+      return stored;
+    }
+    return isGalleryView(view) ? 'grid' : 'list';
+  }
+
+  function syncViewModeButtons() {
+    document.querySelectorAll('.view-button[data-view-mode]').forEach((button) => {
+      const active = button.dataset.viewMode === state.viewMode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const gridButton = document.querySelector('.view-button[data-view-mode="grid"]');
+    if (gridButton) {
+      const label = isGalleryView(state.view) ? 'Gallery' : 'Grid';
+      gridButton.title = label;
+      gridButton.setAttribute('aria-label', label + ' view');
+    }
+  }
+
   function setView(view, path) {
+    if (state.planExpired && view !== 'settings') {
+      notify('The account is disabled. Choose a plan to reactivate it.', 'error');
+      view = 'settings';
+      path = '';
+    }
     state.view = view;
+    state.viewMode = storedViewMode(view);
+    syncViewModeButtons();
     state.path = view === 'home' ? normalizePath(path) : '';
     state.search = '';
     state.selectedHash = null;
@@ -1072,22 +2501,25 @@
 
     closeContextMenu();
     $('accountPanel').hidden = true;
-    $('settingsPanel').hidden = true;
     render();
     document.querySelector('.workspace').scrollTop = 0;
   }
 
-  function setViewMode(mode) {
+  function setViewMode(mode, options = {}) {
     state.viewMode = mode === 'grid' ? 'grid' : 'list';
-    localStorage.setItem('skyvaultViewMode', state.viewMode);
-    document.querySelectorAll('.view-button[data-view-mode]').forEach((button) => {
-      button.classList.toggle('active', button.dataset.viewMode === state.viewMode);
-    });
+    if (options.persist !== false) {
+      try {
+        localStorage.setItem(viewModeStorageKey(state.view), state.viewMode);
+      } catch (error) {
+        // The view still changes in this tab when storage is unavailable.
+      }
+    }
+    syncViewModeButtons();
     const surface = $('filesSurface');
     if (surface) {
       surface.dataset.viewMode = state.viewMode;
     }
-    if (state.inApp) {
+    if (state.inApp && options.render !== false) {
       render();
     }
   }
@@ -1456,9 +2888,8 @@
     performUpload(list.map((file) => ({ file: file, folder: folder })));
   }
 
-  async function handleFolderUpload(fileList) {
-    const files = Array.from(fileList || []);
-    if (!files.length) {
+  async function uploadRelativeEntries(entries) {
+    if (!entries.length) {
       return;
     }
 
@@ -1466,8 +2897,8 @@
     const known = new Set(state.files.map((entry) => entry.path.toLowerCase()));
     const foldersToCreate = new Set();
 
-    for (const file of files) {
-      const parts = String(file.webkitRelativePath || file.name).split('/').filter(Boolean);
+    for (const entry of entries) {
+      const parts = entry.path.split('/').filter(Boolean);
       let current = base;
       for (const directory of parts.slice(0, -1)) {
         const next = joinPath(current, directory);
@@ -1502,12 +2933,77 @@
       }
     }
 
-    const items = files.map((file) => {
-      const parts = String(file.webkitRelativePath || file.name).split('/').filter(Boolean);
-      return { file: file, folder: joinPath(base, parts.slice(0, -1).join('/')) };
+    const items = entries.map((entry) => {
+      const parts = entry.path.split('/').filter(Boolean);
+      return { file: entry.file, folder: joinPath(base, parts.slice(0, -1).join('/')) };
     });
 
     performUpload(items);
+  }
+
+  function handleFolderUpload(fileList) {
+    const entries = Array.from(fileList || []).map((file) => ({
+      file: file,
+      path: String(file.webkitRelativePath || file.name).split('/').filter(Boolean).join('/')
+    }));
+    uploadRelativeEntries(entries);
+  }
+
+  function readDirectoryEntries(reader) {
+    return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+  }
+
+  function readDroppedEntry(entry, parentPath, collected) {
+    const path = joinPath(parentPath, entry.name);
+
+    if (entry.isFile) {
+      return new Promise((resolve, reject) => {
+        entry.file((file) => {
+          collected.push({ file: file, path: path });
+          resolve();
+        }, reject);
+      });
+    }
+
+    if (!entry.isDirectory) {
+      return Promise.resolve();
+    }
+
+    const reader = entry.createReader();
+    const readBatch = () => readDirectoryEntries(reader).then((batch) => {
+      if (!batch.length) {
+        return undefined;
+      }
+      return batch.reduce((chain, child) =>
+        chain.then(() => readDroppedEntry(child, path, collected)), Promise.resolve())
+        .then(readBatch);
+    });
+
+    return readBatch();
+  }
+
+  async function handleWorkspaceDrop(dataTransfer) {
+    const transferItems = Array.from(dataTransfer.items || []);
+    const entries = transferItems
+      .map((item) => (typeof item.webkitGetAsEntry === 'function' ? item.webkitGetAsEntry() : null))
+      .filter(Boolean);
+
+    if (entries.length) {
+      try {
+        const collected = [];
+        for (const entry of entries) {
+          await readDroppedEntry(entry, '', collected);
+        }
+        await uploadRelativeEntries(collected);
+      } catch (error) {
+        notify(error.message || 'Could not read the dropped files.', 'error');
+      }
+      return;
+    }
+
+    if (dataTransfer.files && dataTransfer.files.length) {
+      uploadFiles(dataTransfer.files, uploadFolder());
+    }
   }
 
   function showUploadToast(items) {
@@ -1803,12 +3299,36 @@
     $('accountButton').addEventListener('click', (event) => {
       event.stopPropagation();
       $('accountPanel').hidden = !$('accountPanel').hidden;
-      $('settingsPanel').hidden = true;
+      setThemeMenu(false);
     });
     $('settingsButton').addEventListener('click', (event) => {
       event.stopPropagation();
-      $('settingsPanel').hidden = !$('settingsPanel').hidden;
       $('accountPanel').hidden = true;
+      setThemeMenu(false);
+      setView('settings');
+    });
+    $('plansButton').addEventListener('click', () => {
+      $('accountPanel').hidden = true;
+      setView('settings');
+    });
+    $('settingsPanel').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-plan]');
+      if (button && !button.disabled) {
+        changePlan(button.dataset.plan);
+      }
+    });
+    $('themeButton').addEventListener('click', (event) => {
+      event.stopPropagation();
+      setThemeMenu($('themeMenu').hidden);
+      $('accountPanel').hidden = true;
+    });
+    document.querySelectorAll('[data-theme-option]').forEach((button) => {
+      button.addEventListener('click', () => {
+        applyTheme(button.dataset.themeOption, true);
+        persistTheme(button.dataset.themeOption);
+        setThemeMenu(false);
+        $('themeButton').focus();
+      });
     });
     $('helpButton').addEventListener('click', () => {
       $('aboutModal').hidden = false;
@@ -1848,6 +3368,9 @@
       if (!event.target.closest('#accountPanel') && !event.target.closest('#accountButton')) {
         $('accountPanel').hidden = true;
       }
+      if (!event.target.closest('#themeMenu') && !event.target.closest('#themeButton')) {
+        setThemeMenu(false);
+      }
     });
 
     document.addEventListener('scroll', closeContextMenu, true);
@@ -1870,6 +3393,17 @@
           state.selectedHash = entry.pathHash;
           updateSelection();
           openContextMenu(entry, menuButton);
+        }
+        return;
+      }
+
+      const openButton = event.target.closest('[data-open]');
+      if (openButton) {
+        const entry = findEntry(openButton.dataset.open);
+        if (entry) {
+          state.selectedHash = entry.pathHash;
+          updateSelection();
+          openEntry(entry);
         }
         return;
       }
@@ -1994,11 +3528,16 @@
     workspace.addEventListener('drop', (event) => {
       dragDepth = 0;
       workspace.classList.remove('is-dropping');
-      if (!event.dataTransfer || !event.dataTransfer.files || !event.dataTransfer.files.length) {
+      if (!event.dataTransfer) {
         return;
       }
+      if (!event.dataTransfer.items || !event.dataTransfer.items.length) {
+        if (!event.dataTransfer.files || !event.dataTransfer.files.length) {
+          return;
+        }
+      }
       event.preventDefault();
-      uploadFiles(event.dataTransfer.files, uploadFolder());
+      handleWorkspaceDrop(event.dataTransfer);
     });
   }
 
@@ -2048,6 +3587,7 @@
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
         closeContextMenu();
+        setThemeMenu(false);
         $('accountPanel').hidden = true;
         if (!$('modal').hidden) {
           cancelModal();
@@ -2102,9 +3642,10 @@
   }
 
   async function init() {
-    state.viewMode = localStorage.getItem('skyvaultViewMode') === 'grid' ? 'grid' : 'list';
+    state.viewMode = storedViewMode('home');
+    applyTheme(document.documentElement.dataset.theme || 'mono', false);
     bindEvents();
-    setViewMode(state.viewMode);
+    setViewMode(state.viewMode, { persist: false, render: false });
     setAuthMode('login');
 
     try {

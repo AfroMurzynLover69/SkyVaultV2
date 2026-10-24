@@ -96,7 +96,30 @@ public class AuthController {
                 user.getEmail(),
                 user.getQuotaBytes(),
                 user.getUsedBytes(),
-                user.getCreatedAt());
+                user.getCreatedAt(),
+                user.getPlan(),
+                authService.isPlanActive(user),
+                user.getPlanStartedAt(),
+                user.getPlanExpiresAt(),
+                user.getEncryptedSettings(),
+                user.getSettingsIv());
+    }
+
+    @PostMapping("/settings")
+    public ResponseEntity<Void> updateSettings(@Valid @RequestBody SettingsRequest request,
+                                               HttpServletRequest httpRequest) {
+        authService.updateSettings(
+                currentUserId(httpRequest),
+                request.encryptedSettings(),
+                request.settingsIv());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/plan")
+    public ResponseEntity<Void> updatePlan(@Valid @RequestBody PlanRequest request,
+                                           HttpServletRequest httpRequest) {
+        authService.updatePlan(currentUserId(httpRequest), request.plan());
+        return ResponseEntity.noContent().build();
     }
 
     private ResponseEntity<SessionResponse> withSession(AppUser user, HttpServletResponse response) {
@@ -134,6 +157,14 @@ public class AuthController {
             @NotBlank String wrappedMasterKeyIv) {
     }
 
+    public record SettingsRequest(
+            @NotBlank @Size(max = 8192) String encryptedSettings,
+            @NotBlank @Size(max = 64) String settingsIv) {
+    }
+
+    public record PlanRequest(@NotBlank @Size(max = 16) String plan) {
+    }
+
     public record SessionResponse(Long userId, String email) {
     }
 
@@ -146,6 +177,12 @@ public class AuthController {
                                   String email,
                                   long quotaBytes,
                                   long usedBytes,
-                                  java.time.OffsetDateTime createdAt) {
+                                  java.time.OffsetDateTime createdAt,
+                                  String plan,
+                                  boolean planActive,
+                                  java.time.OffsetDateTime planStartedAt,
+                                  java.time.OffsetDateTime planExpiresAt,
+                                  String encryptedSettings,
+                                  String settingsIv) {
     }
 }

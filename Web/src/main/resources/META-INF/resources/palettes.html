@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SkyVault — warianty kolorystyczne</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body {
+      background: #efefed;
+      background-image:
+        radial-gradient(circle at 12% 0%, rgba(255, 255, 255, .9), transparent 36%),
+        radial-gradient(circle at 100% 10%, rgba(0, 0, 0, .05), transparent 30%);
+      min-height: 100vh;
+    }
+
+    .gallery {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 56px 28px 72px;
+    }
+
+    .gallery-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 42px;
+      font-weight: 700;
+      letter-spacing: -.01em;
+    }
+
+    .gallery-eyebrow {
+      margin: 0 0 10px;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .16em;
+      color: #6b6b6b;
+    }
+
+    .gallery h1 {
+      margin: 0 0 14px;
+      font-size: clamp(2rem, 4vw, 3.1rem);
+      line-height: 1.02;
+      letter-spacing: -.04em;
+      max-width: 18ch;
+    }
+
+    .gallery-intro {
+      margin: 0;
+      max-width: 64ch;
+      font-size: .96rem;
+      line-height: 1.65;
+      color: #525252;
+    }
+
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+      gap: 24px;
+      margin-top: 44px;
+    }
+
+    .palette-card {
+      background: var(--paper);
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 18px 38px rgba(0, 0, 0, .07);
+    }
+
+    .palette-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .palette-id {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      border: 1px solid var(--line-strong);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: .72rem;
+      flex: 0 0 auto;
+    }
+
+    .palette-name { min-width: 0; flex: 1; }
+
+    .palette-name h2 {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+      margin: 0 0 3px;
+      font-size: 1.06rem;
+      letter-spacing: -.02em;
+    }
+
+    .palette-name p {
+      margin: 0;
+      font-size: .77rem;
+      color: var(--muted);
+    }
+
+    .current-badge {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 1px 8px;
+      font-size: .62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+    }
+
+    .palette-dots {
+      display: inline-flex;
+      flex: 0 0 auto;
+      padding-top: 4px;
+    }
+
+    .palette-dots span {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      margin-left: -4px;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .16);
+    }
+
+    .palette-dots span:first-child { margin-left: 0; }
+
+    .palette-window {
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--paper);
+      box-shadow: 0 12px 26px rgba(0, 0, 0, .10);
+    }
+
+    .palette-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      height: 46px;
+      padding: 0 13px;
+      background: var(--black);
+      color: var(--paper);
+    }
+
+    .palette-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 700;
+      letter-spacing: -.01em;
+      font-size: .9rem;
+    }
+
+    .palette-brand .brand-mark.small {
+      width: 26px;
+      height: 26px;
+      font-size: 10px;
+      border-radius: 7px;
+    }
+
+    .palette-top-actions { display: inline-flex; align-items: center; gap: 3px; }
+
+    .palette-top-actions .icon-button {
+      width: 30px;
+      height: 30px;
+      color: var(--chrome-text);
+    }
+
+    .palette-top-actions .icon-button.is-on { color: var(--paper); }
+
+    .palette-top-actions .icon { width: 15px; height: 15px; }
+
+    .palette-top-actions .avatar-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      margin-left: 5px;
+      font-size: .68rem;
+    }
+
+    .palette-body {
+      display: grid;
+      grid-template-columns: 142px minmax(0, 1fr);
+      min-height: 268px;
+    }
+
+    .palette-side {
+      background: var(--black);
+      color: var(--paper);
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .palette-side .nav-heading {
+      margin: 8px 8px 5px;
+      font-size: .58rem;
+    }
+
+    .palette-side .nav-heading:first-child { margin-top: 2px; }
+
+    .palette-side .nav-item {
+      padding: 6px 8px;
+      gap: 8px;
+      font-size: .78rem;
+    }
+
+    .palette-side .nav-item .icon { width: 14px; height: 14px; }
+
+    .palette-side .nav-item.active { background: var(--paper); color: var(--black); }
+
+    .palette-side .side-meter { margin: auto 8px 5px; }
+
+    .palette-side .side-meter .meter {
+      width: auto;
+      height: 5px;
+      margin: 0 0 5px;
+      background: var(--chrome-track);
+    }
+
+    .palette-side .side-meter .meter > span {
+      width: 62%;
+      background: var(--paper);
+    }
+
+    .palette-side .side-meter small {
+      font-size: .61rem;
+      color: var(--white-muted);
+    }
+
+    .palette-main {
+      padding: 13px 15px 15px;
+      min-width: 0;
+      background: var(--paper);
+    }
+
+    .palette-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .palette-title h3 {
+      margin: 0;
+      font-size: 1.02rem;
+      letter-spacing: -.03em;
+    }
+
+    .palette-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 11px;
+      font-size: .72rem;
+      border-radius: 6px;
+    }
+
+    .palette-cta .icon { width: 13px; height: 13px; }
+
+    .palette-main .search-box {
+      height: 31px;
+      min-width: 0;
+      flex: none;
+      width: 100%;
+      margin-bottom: 11px;
+      padding: 0 10px;
+    }
+
+    .palette-main .search-box .icon { width: 13px; height: 13px; }
+
+    .palette-main .search-box span {
+      font-size: .74rem;
+      color: var(--muted);
+    }
+
+    .palette-main .files-table {
+      font-size: .74rem;
+      table-layout: fixed;
+    }
+
+    .palette-main .files-table th {
+      font-size: .58rem;
+      padding: 6px 6px 7px;
+    }
+
+    .palette-main .files-table td {
+      padding: 6px;
+      border-bottom: 1px solid var(--surface-2);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .palette-main .files-table th:nth-child(2),
+    .palette-main .files-table td:nth-child(2) { width: 96px; }
+
+    .palette-main .files-table th:nth-child(3),
+    .palette-main .files-table td:nth-child(3) { width: 74px; text-align: right; }
+
+    .palette-main .file-name { gap: 6px; }
+
+    .palette-main .file-name .icon { width: 15px; height: 15px; }
+    .palette-main .file-name .star-mark { width: 11px; height: 11px; }
+    .palette-main .owner-chip { font-size: .68rem; gap: 5px; }
+    .palette-main .owner-avatar { width: 16px; height: 16px; font-size: .5rem; }
+
+    .palette-swatch-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 14px;
+    }
+
+    .palette-swatch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 9px 3px 5px;
+      font-size: .63rem;
+      color: var(--muted);
+      background: var(--surface);
+    }
+
+    .palette-swatch i {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .14);
+    }
+
+    .palette-swatch code {
+      font-family: var(--mono);
+      font-size: .61rem;
+      color: var(--ink);
+    }
+
+    .gallery-note {
+      margin-top: 28px;
+      padding: 16px 18px;
+      border: 1px dashed #bdbdbd;
+      border-radius: 12px;
+      font-size: .82rem;
+      line-height: 1.6;
+      color: #555;
+      background: rgba(255, 255, 255, .55);
+    }
+
+    .gallery-note strong { color: #111; }
+
+    @media (max-width: 620px) {
+      .gallery { padding: 34px 16px 48px; }
+
+      .gallery-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-top: 28px;
+      }
+
+      .palette-card { padding: 14px; }
+
+      .palette-body { grid-template-columns: 118px minmax(0, 1fr); }
+
+      .palette-side .nav-item span { display: inline; }
+
+      .palette-main .files-table th:nth-child(2),
+      .palette-main .files-table td:nth-child(2) { display: none; }
+
+      .palette-main .files-table th:nth-child(3),
+      .palette-main .files-table td:nth-child(3) { width: 54px; }
+    }
+  </style>
+</head>
+<body>
+
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <symbol id="p-home" viewBox="0 0 24 24"><path d="M3 11.2 12 4l9 7.2V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="p-drive" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="p-images" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m3 17 5-5 4 4 3-3 6 6"/></symbol>
+  <symbol id="p-star" viewBox="0 0 24 24"><path d="m12 3.5 2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 10l6.1-.9z"/></symbol>
+  <symbol id="p-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></symbol>
+  <symbol id="p-folder" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="p-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="p-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.3c-.7.3-1 1-1 1.8"/><path d="M12 17h.01"/></symbol>
+  <symbol id="p-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></symbol>
+  <symbol id="p-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="p-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+</svg>
+
+<main class="gallery">
+  <div class="gallery-brand"><span class="brand-mark">SV</span><span class="brand-name">SkyVault</span></div>
+
+  <p class="gallery-eyebrow">Design preview · 4 warianty</p>
+  <h1>Kolorystyka strony do wyboru</h1>
+  <p class="gallery-intro">
+    Obecny motyw Mono (czarno-biały) plus trzy propozycje: chłodny <strong>Nord</strong>,
+    leśny <strong>Forest</strong> i ciepły <strong>Amber</strong>. Wszystkie korzystają z tych
+    samych zmiennych CSS, więc w aplikacji wystarczy ikona słońca, żeby przełączać motyw.
+  </p>
+
+  <div class="gallery-grid">
+
+    <!-- 01 · MONO -->
+    <article class="palette-card" data-theme="mono">
+      <header class="palette-head">
+        <span class="palette-id">01</span>
+        <div class="palette-name">
+          <h2>Mono <span class="current-badge">obecny</span></h2>
+          <p>Czysta czerń, biel i szarość. Zero koloru — obecny charakter SkyVault.</p>
+        </div>
+        <div class="palette-dots" data-theme="mono" aria-hidden="true">
+          <span style="background: var(--black)"></span>
+          <span style="background: var(--paper)"></span>
+          <span style="background: var(--muted-2)"></span>
+        </div>
+      </header>
+
+      <div class="palette-window">
+        <div class="palette-top">
+          <span class="palette-brand"><span class="brand-mark small">SV</span><span class="brand-name">SkyVault</span></span>
+          <span class="palette-top-actions">
+            <span class="icon-button"><svg class="icon"><use href="#p-help"></use></svg></span>
+            <span class="icon-button is-on"><svg class="icon"><use href="#p-sun"></use></svg></span>
+            <span class="avatar-button">P</span>
+          </span>
+        </div>
+        <div class="palette-body">
+          <aside class="palette-side">
+            <p class="nav-heading">Drive</p>
+            <span class="nav-item active"><svg class="icon"><use href="#p-home"></use></svg><span>Home</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-drive"></use></svg><span>My Drive</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-images"></use></svg><span>Images</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-star"></use></svg><span>Starred</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-trash"></use></svg><span>Trash</span></span>
+            <div class="side-meter">
+              <div class="meter"><span></span></div>
+              <small>2.4 GB of 5 GB</small>
+            </div>
+          </aside>
+          <div class="palette-main">
+            <div class="palette-title">
+              <h3>My Drive</h3>
+              <span class="primary palette-cta"><svg class="icon"><use href="#p-upload"></use></svg>Upload</span>
+            </div>
+            <div class="search-box"><svg class="icon"><use href="#p-search"></use></svg><span>Search SkyVault</span></div>
+            <table class="files-table">
+              <thead><tr><th>Name</th><th>Owner</th><th>Date</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-folder"></use></svg><span>Project Atlas</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Today</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><svg class="icon star-mark"><use href="#p-star"></use></svg><span>thesis.pdf</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Yesterday</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><span>notes.md</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>12 Oct</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-swatch-row">
+        <span class="palette-swatch"><i style="background: var(--black)"></i>Chrome <code>#0a0a0a</code></span>
+        <span class="palette-swatch"><i style="background: var(--paper)"></i>Canvas <code>#ffffff</code></span>
+        <span class="palette-swatch"><i style="background: var(--accent)"></i>Accent <code>#0a0a0a</code></span>
+      </div>
+    </article>
+
+    <!-- 02 · NORD -->
+    <article class="palette-card" data-theme="nord">
+      <header class="palette-head">
+        <span class="palette-id">02</span>
+        <div class="palette-name">
+          <h2>Nord</h2>
+          <p>Granatowy chrome, lodowe tło i stonowany błękit jako akcent.</p>
+        </div>
+        <div class="palette-dots" data-theme="nord" aria-hidden="true">
+          <span style="background: var(--black)"></span>
+          <span style="background: var(--paper)"></span>
+          <span style="background: var(--accent)"></span>
+        </div>
+      </header>
+
+      <div class="palette-window">
+        <div class="palette-top">
+          <span class="palette-brand"><span class="brand-mark small">SV</span><span class="brand-name">SkyVault</span></span>
+          <span class="palette-top-actions">
+            <span class="icon-button"><svg class="icon"><use href="#p-help"></use></svg></span>
+            <span class="icon-button is-on"><svg class="icon"><use href="#p-sun"></use></svg></span>
+            <span class="avatar-button">P</span>
+          </span>
+        </div>
+        <div class="palette-body">
+          <aside class="palette-side">
+            <p class="nav-heading">Drive</p>
+            <span class="nav-item active"><svg class="icon"><use href="#p-home"></use></svg><span>Home</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-drive"></use></svg><span>My Drive</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-images"></use></svg><span>Images</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-star"></use></svg><span>Starred</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-trash"></use></svg><span>Trash</span></span>
+            <div class="side-meter">
+              <div class="meter"><span></span></div>
+              <small>2.4 GB of 5 GB</small>
+            </div>
+          </aside>
+          <div class="palette-main">
+            <div class="palette-title">
+              <h3>My Drive</h3>
+              <span class="primary palette-cta"><svg class="icon"><use href="#p-upload"></use></svg>Upload</span>
+            </div>
+            <div class="search-box"><svg class="icon"><use href="#p-search"></use></svg><span>Search SkyVault</span></div>
+            <table class="files-table">
+              <thead><tr><th>Name</th><th>Owner</th><th>Date</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-folder"></use></svg><span>Project Atlas</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Today</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><svg class="icon star-mark"><use href="#p-star"></use></svg><span>thesis.pdf</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Yesterday</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><span>notes.md</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>12 Oct</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-swatch-row">
+        <span class="palette-swatch"><i style="background: var(--black)"></i>Chrome <code>#17212f</code></span>
+        <span class="palette-swatch"><i style="background: var(--paper)"></i>Canvas <code>#f7f9fc</code></span>
+        <span class="palette-swatch"><i style="background: var(--accent)"></i>Accent <code>#2f6fae</code></span>
+      </div>
+    </article>
+
+    <!-- 03 · FOREST -->
+    <article class="palette-card" data-theme="forest">
+      <header class="palette-head">
+        <span class="palette-id">03</span>
+        <div class="palette-name">
+          <h2>Forest</h2>
+          <p>Głęboka zieleń, delikatna szałwia i spokojny, naturalny akcent.</p>
+        </div>
+        <div class="palette-dots" data-theme="forest" aria-hidden="true">
+          <span style="background: var(--black)"></span>
+          <span style="background: var(--paper)"></span>
+          <span style="background: var(--accent)"></span>
+        </div>
+      </header>
+
+      <div class="palette-window">
+        <div class="palette-top">
+          <span class="palette-brand"><span class="brand-mark small">SV</span><span class="brand-name">SkyVault</span></span>
+          <span class="palette-top-actions">
+            <span class="icon-button"><svg class="icon"><use href="#p-help"></use></svg></span>
+            <span class="icon-button is-on"><svg class="icon"><use href="#p-sun"></use></svg></span>
+            <span class="avatar-button">P</span>
+          </span>
+        </div>
+        <div class="palette-body">
+          <aside class="palette-side">
+            <p class="nav-heading">Drive</p>
+            <span class="nav-item active"><svg class="icon"><use href="#p-home"></use></svg><span>Home</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-drive"></use></svg><span>My Drive</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-images"></use></svg><span>Images</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-star"></use></svg><span>Starred</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-trash"></use></svg><span>Trash</span></span>
+            <div class="side-meter">
+              <div class="meter"><span></span></div>
+              <small>2.4 GB of 5 GB</small>
+            </div>
+          </aside>
+          <div class="palette-main">
+            <div class="palette-title">
+              <h3>My Drive</h3>
+              <span class="primary palette-cta"><svg class="icon"><use href="#p-upload"></use></svg>Upload</span>
+            </div>
+            <div class="search-box"><svg class="icon"><use href="#p-search"></use></svg><span>Search SkyVault</span></div>
+            <table class="files-table">
+              <thead><tr><th>Name</th><th>Owner</th><th>Date</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-folder"></use></svg><span>Project Atlas</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Today</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><svg class="icon star-mark"><use href="#p-star"></use></svg><span>thesis.pdf</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Yesterday</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><span>notes.md</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>12 Oct</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-swatch-row">
+        <span class="palette-swatch"><i style="background: var(--black)"></i>Chrome <code>#122019</code></span>
+        <span class="palette-swatch"><i style="background: var(--paper)"></i>Canvas <code>#f7faf5</code></span>
+        <span class="palette-swatch"><i style="background: var(--accent)"></i>Accent <code>#2f7a54</code></span>
+      </div>
+    </article>
+
+    <!-- 04 · AMBER -->
+    <article class="palette-card" data-theme="amber">
+      <header class="palette-head">
+        <span class="palette-id">04</span>
+        <div class="palette-name">
+          <h2>Amber</h2>
+          <p>Ciepły espresso, kremowe tło i bursztynowy akcent — jak światło słońca.</p>
+        </div>
+        <div class="palette-dots" data-theme="amber" aria-hidden="true">
+          <span style="background: var(--black)"></span>
+          <span style="background: var(--paper)"></span>
+          <span style="background: var(--accent)"></span>
+        </div>
+      </header>
+
+      <div class="palette-window">
+        <div class="palette-top">
+          <span class="palette-brand"><span class="brand-mark small">SV</span><span class="brand-name">SkyVault</span></span>
+          <span class="palette-top-actions">
+            <span class="icon-button"><svg class="icon"><use href="#p-help"></use></svg></span>
+            <span class="icon-button is-on"><svg class="icon"><use href="#p-sun"></use></svg></span>
+            <span class="avatar-button">P</span>
+          </span>
+        </div>
+        <div class="palette-body">
+          <aside class="palette-side">
+            <p class="nav-heading">Drive</p>
+            <span class="nav-item active"><svg class="icon"><use href="#p-home"></use></svg><span>Home</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-drive"></use></svg><span>My Drive</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-images"></use></svg><span>Images</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-star"></use></svg><span>Starred</span></span>
+            <span class="nav-item"><svg class="icon"><use href="#p-trash"></use></svg><span>Trash</span></span>
+            <div class="side-meter">
+              <div class="meter"><span></span></div>
+              <small>2.4 GB of 5 GB</small>
+            </div>
+          </aside>
+          <div class="palette-main">
+            <div class="palette-title">
+              <h3>My Drive</h3>
+              <span class="primary palette-cta"><svg class="icon"><use href="#p-upload"></use></svg>Upload</span>
+            </div>
+            <div class="search-box"><svg class="icon"><use href="#p-search"></use></svg><span>Search SkyVault</span></div>
+            <table class="files-table">
+              <thead><tr><th>Name</th><th>Owner</th><th>Date</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-folder"></use></svg><span>Project Atlas</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Today</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><svg class="icon star-mark"><use href="#p-star"></use></svg><span>thesis.pdf</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>Yesterday</td>
+                </tr>
+                <tr>
+                  <td><span class="file-name"><svg class="icon"><use href="#p-file"></use></svg><span>notes.md</span></span></td>
+                  <td><span class="owner-chip"><span class="owner-avatar">P</span>Patryk</span></td>
+                  <td>12 Oct</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-swatch-row">
+        <span class="palette-swatch"><i style="background: var(--black)"></i>Chrome <code>#241a12</code></span>
+        <span class="palette-swatch"><i style="background: var(--paper)"></i>Canvas <code>#fdf9f3</code></span>
+        <span class="palette-swatch"><i style="background: var(--accent)"></i>Accent <code>#ad5a24</code></span>
+      </div>
+    </article>
+
+  </div>
+
+  <p class="gallery-note">
+    <strong>Jak to działa w aplikacji:</strong> ikona słońca w prawym górnym rogu otwiera listę
+    czterech motywów. Wybór jest szyfrowany w przeglądarce kluczem pochodnym od klucza głównego
+    i dopiero wtedy zapisywany na koncie (<code>app_user.encrypted_settings</code>),
+    a cache'owany w <code>localStorage</code>, więc serwer nie zna motywu, a ten sam użytkownik
+    widzi go na każdym urządzeniu po zalogowaniu. Obecny motyw Mono pozostaje domyślny
+    i nie zmienia wyglądu strony.
+  </p>
+</main>
+
+</body>
+</html>

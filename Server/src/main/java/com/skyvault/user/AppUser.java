@@ -13,6 +13,8 @@ import java.time.OffsetDateTime;
 @Table(name = "app_user")
 public class AppUser {
 
+    public static final String DEFAULT_PLAN = "free";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -38,6 +40,21 @@ public class AppUser {
     @Column(name = "used_bytes", nullable = false)
     private long usedBytes;
 
+    @Column(name = "encrypted_settings", length = 8192)
+    private String encryptedSettings;
+
+    @Column(name = "settings_iv", length = 64)
+    private String settingsIv;
+
+    @Column(name = "plan", nullable = false, length = 16)
+    private String plan;
+
+    @Column(name = "plan_started_at", nullable = false)
+    private OffsetDateTime planStartedAt;
+
+    @Column(name = "plan_expires_at", nullable = false)
+    private OffsetDateTime planExpiresAt;
+
     @Column(name = "created_at", nullable = false, insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -57,6 +74,23 @@ public class AppUser {
         this.wrappedMasterKeyIv = wrappedMasterKeyIv;
         this.quotaBytes = quotaBytes;
         this.usedBytes = 0;
+        this.plan = DEFAULT_PLAN;
+        this.planStartedAt = OffsetDateTime.now();
+        this.planExpiresAt = this.planStartedAt.plusDays(30);
+    }
+
+    public void changePlan(String plan,
+                           long quotaBytes,
+                           OffsetDateTime startedAt,
+                           OffsetDateTime expiresAt) {
+        this.plan = plan;
+        this.quotaBytes = quotaBytes;
+        this.planStartedAt = startedAt;
+        this.planExpiresAt = expiresAt;
+    }
+
+    public boolean isPlanActive(OffsetDateTime now) {
+        return planExpiresAt != null && planExpiresAt.isAfter(now);
     }
 
     public void replaceCryptoMaterial(String authVerifierHash,
@@ -103,6 +137,34 @@ public class AppUser {
 
     public long getUsedBytes() {
         return usedBytes;
+    }
+
+    public String getEncryptedSettings() {
+        return encryptedSettings;
+    }
+
+    public void setEncryptedSettings(String encryptedSettings) {
+        this.encryptedSettings = encryptedSettings;
+    }
+
+    public String getSettingsIv() {
+        return settingsIv;
+    }
+
+    public void setSettingsIv(String settingsIv) {
+        this.settingsIv = settingsIv;
+    }
+
+    public String getPlan() {
+        return plan;
+    }
+
+    public OffsetDateTime getPlanStartedAt() {
+        return planStartedAt;
+    }
+
+    public OffsetDateTime getPlanExpiresAt() {
+        return planExpiresAt;
     }
 
     public OffsetDateTime getCreatedAt() {

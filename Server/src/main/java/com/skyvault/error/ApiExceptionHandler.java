@@ -15,7 +15,8 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Map<String, Object>> handleApiException(ApiException exception) {
-        return ResponseEntity.status(exception.getStatus()).body(body(exception.getStatus(), exception.getMessage()));
+        return ResponseEntity.status(exception.getStatus())
+                .body(body(exception.getStatus(), exception.getMessage(), exception.getCode()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -24,20 +25,24 @@ public class ApiExceptionHandler {
                 .findFirst()
                 .map(error -> error.getField() + ": " + error.getDefaultMessage())
                 .orElse("Invalid request data");
-        return ResponseEntity.badRequest().body(body(HttpStatus.BAD_REQUEST, message));
+        return ResponseEntity.badRequest().body(body(HttpStatus.BAD_REQUEST, message, null));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleTooLarge(MaxUploadSizeExceededException exception) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(body(HttpStatus.PAYLOAD_TOO_LARGE, "File exceeds the allowed size"));
+                .body(body(HttpStatus.PAYLOAD_TOO_LARGE, "File exceeds the allowed size", null));
     }
 
-    private Map<String, Object> body(HttpStatus status, String message) {
-        return Map.of(
-                "status", status.value(),
-                "error", status.getReasonPhrase(),
-                "message", message,
-                "timestamp", OffsetDateTime.now().toString());
+    private Map<String, Object> body(HttpStatus status, String message, String code) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("status", status.value());
+        payload.put("error", status.getReasonPhrase());
+        payload.put("message", message);
+        if (code != null) {
+            payload.put("code", code);
+        }
+        payload.put("timestamp", OffsetDateTime.now().toString());
+        return payload;
     }
 }

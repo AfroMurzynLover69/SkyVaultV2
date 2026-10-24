@@ -114,6 +114,85 @@ $me = Invoke-Api -Method 'GET' -Path '/api/auth/me'
 Assert-Equal 'session /api/auth/me' $me.Status 200
 $meJson = $me.Body | ConvertFrom-Json
 Assert-Equal 'account' $meJson.email $email
+Assert-True 'no encrypted settings yet' (-not $meJson.encryptedSettings)
+Assert-Equal 'new plan is active' $meJson.planActive $true
+Assert-True 'plan start date returned' ([bool]$meJson.planStartedAt)
+Assert-True 'plan expiry date returned' ([bool]$meJson.planExpiresAt)
+$planDays = ([datetime]$meJson.planExpiresAt - [datetime]$meJson.planStartedAt).TotalDays
+Assert-True 'plan lasts 30 days' ($planDays -gt 29.9 -and $planDays -lt 30.1)
+
+$settingsCiphertext = New-Base64 64
+$settingsIv = New-Base64 12
+$settingsUpdate = Invoke-Api -Method 'POST' -Path '/api/auth/settings' -Json (@{
+    encryptedSettings = $settingsCiphertext
+    settingsIv       = $settingsIv
+} | ConvertTo-Json)
+Assert-Equal 'encrypted settings saved' $settingsUpdate.Status 204
+$meWithSettings = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+$meWithSettingsJson = $meWithSettings.Body | ConvertFrom-Json
+Assert-Equal 'settings ciphertext stored on the account' $meWithSettingsJson.encryptedSettings $settingsCiphertext
+Assert-Equal 'settings IV stored on the account' $meWithSettingsJson.settingsIv $settingsIv
+
+$badSettingsIv = Invoke-Api -Method 'POST' -Path '/api/auth/settings' -Json (@{
+    encryptedSettings = $settingsCiphertext
+    settingsIv       = New-Base64 16
+} | ConvertTo-Json)
+Assert-Equal 'settings with a bad IV rejected' $badSettingsIv.Status 400
+
+Assert-Equal 'default plan' $meJson.plan 'free'
+$planUpdate = Invoke-Api -Method 'POST' -Path '/api/auth/plan' -Json (@{ plan = 'plus' } | ConvertTo-Json)
+Assert-Equal 'plan saved' $planUpdate.Status 204
+$meWithPlan = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+$meWithPlanJson = $meWithPlan.Body | ConvertFrom-Json
+Assert-Equal 'plan stored on the account' $meWithPlanJson.plan 'plus'
+Assert-Equal 'plan storage limit' $meWithPlanJson.quotaBytes (200GB)
+$unknownPlan = Invoke-Api -Method 'POST' -Path '/api/auth/plan' -Json (@{ plan = 'unlimited' } | ConvertTo-Json)
+Assert-Equal 'unknown plan rejected' $unknownPlan.Status 400
+$freePlan = Invoke-Api -Method 'POST' -Path '/api/auth/plan' -Json (@{ plan = 'free' } | ConvertTo-Json)
+Assert-Equal 'plan switched back to free' $freePlan.Status 204
+
+$planFile = Join-Path $PSScriptRoot 'data\plans.json'
+Assert-True 'plain-text plan state file exists' (Test-Path $planFile)
+if (Test-Path $planFile) {
+    $planState = (Get-Content $planFile -Raw) | ConvertFrom-Json
+    $planEntry = $planState.accounts | Where-Object { $_.email -eq $email }
+    Assert-Equal 'plan state stores the plan' $planEntry.plan 'free'
+    Assert-True 'plan state stores both dates' ([bool]$planEntry.planStartedAt -and [bool]$planEntry.planExpiresAt)
+    $planFileText = Get-Content $planFile -Raw
+    Assert-True 'plan state has no verifier or key material' (-not ($planFileText -match 'authVerifier|wrappedMasterKey|passwordSalt'))
+}
+
+Write-Host "`n3b. Plan expiry disables the account"
+$psql = (Get-Command psql -ErrorAction SilentlyContinue).Source
+if (-not $psql) {
+    $psql = 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
+}
+if (Test-Path $psql) {
+    $env:PGPASSWORD = 'skyvault'
+    & $psql -h 127.0.0.1 -U skyvault -d skyvault -t -A -c "UPDATE app_user SET plan_started_at = now() - interval '31 days', plan_expires_at = now() - interval '1 day' WHERE email = '$email';" | Out-Null
+    Assert-True 'database plan expired for the test' ($LASTEXITCODE -eq 0)
+    Start-Sleep -Milliseconds 400
+
+    $expiredMe = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+    $expiredMeJson = $expiredMe.Body | ConvertFrom-Json
+    Assert-Equal 'expired plan reported inactive' $expiredMeJson.planActive $false
+
+    $lockedFiles = Invoke-Api -Method 'GET' -Path '/api/files'
+    Assert-Equal 'file access blocked' $lockedFiles.Status 403
+    $lockedJson = $lockedFiles.Body | ConvertFrom-Json
+    Assert-Equal 'plan expired code' $lockedJson.code 'PLAN_EXPIRED'
+
+    $renew = Invoke-Api -Method 'POST' -Path '/api/auth/plan' -Json (@{ plan = 'free' } | ConvertTo-Json)
+    Assert-Equal 'expired plan renewed' $renew.Status 204
+    $renewedMe = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+    $renewedMeJson = $renewedMe.Body | ConvertFrom-Json
+    Assert-Equal 'renewed plan active again' $renewedMeJson.planActive $true
+
+    $unlockedFiles = Invoke-Api -Method 'GET' -Path '/api/files'
+    Assert-Equal 'file access restored' $unlockedFiles.Status 200
+} else {
+    Write-Host '  [SKIP] psql not found; expiry test skipped' -ForegroundColor Yellow
+}
 
 $duplicate = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $registerBody
 Assert-Equal 'duplicate account rejected' $duplicate.Status 409
