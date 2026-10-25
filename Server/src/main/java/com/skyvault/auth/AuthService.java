@@ -1,8 +1,8 @@
 package com.skyvault.auth;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.skyvault.config.StorageProperties;
 import com.skyvault.error.ApiException;
 import com.skyvault.plan.PlanStateFile;
 import com.skyvault.user.AppUser;
@@ -44,10 +44,10 @@ public class AuthService {
 
     public AuthService(AppUserRepository userRepository,
                        PlanStateFile planStateFile,
-                       @Value("${skyvault.storage.default-quota-gb:5}") long defaultQuotaGb) {
+                       StorageProperties storageProperties) {
         this.userRepository = userRepository;
         this.planStateFile = planStateFile;
-        this.defaultQuotaBytes = defaultQuotaGb * 1024L * 1024L * 1024L;
+        this.defaultQuotaBytes = storageProperties.defaultQuotaGb() * GIB;
 
         random.nextBytes(fakeSaltSecret);
         this.dummyVerifierHash = Base64.getEncoder()

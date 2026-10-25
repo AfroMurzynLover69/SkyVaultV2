@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://skyvault.local/skyvault.config.schema.json",
+  "title": "SkyVault server configuration",
+  "description": "Startup configuration read by SkyVault.ps1. JVM values are applied when the server starts; everything else is passed to Spring Boot.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Address the HTTP/HTTPS connector binds to. Use 0.0.0.0 for all interfaces."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "https": {
+          "type": "boolean",
+          "description": "Enable TLS. Disable only behind a trusted reverse proxy."
+        },
+        "threads": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "minSpare": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            }
+          }
+        },
+        "maxConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "acceptCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "connectionTimeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "keepAliveTimeoutMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxHttpRequestHeaderSize": {
+          "type": "string",
+          "description": "Spring DataSize, for example 16KB or 1MB."
+        },
+        "maxHttpFormPostSize": {
+          "type": "string",
+          "description": "Spring DataSize, for example 2MB."
+        },
+        "maxConcurrentUsers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "acquireTimeoutMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gracefulShutdownTimeout": {
+          "type": "string",
+          "description": "Spring Duration, for example 30s."
+        },
+        "compression": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minResponseSize": {
+              "type": "string"
+            },
+            "mimeTypes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "jvm": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heapMinMb": {
+          "type": "integer",
+          "minimum": 64
+        },
+        "heapMaxMb": {
+          "type": "integer",
+          "minimum": 128
+        },
+        "activeProcessors": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 256,
+          "description": "null means all logical processors reported by the operating system."
+        },
+        "garbageCollector": {
+          "type": "string",
+          "enum": [
+            "g1",
+            "zgc",
+            "parallel",
+            "serial",
+            "default"
+          ]
+        },
+        "directMemoryMb": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 64
+        },
+        "exitOnOutOfMemory": {
+          "type": "boolean"
+        },
+        "tempDirectory": {
+          "type": "string"
+        },
+        "extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dataDirectory": {
+          "type": "string"
+        },
+        "planStateFile": {
+          "type": "string"
+        },
+        "planStateRefreshMs": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "defaultQuotaGb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10240
+        },
+        "maxUploadMb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "maxRequestMb": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "name": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "poolSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "poolMinIdle": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "connectionTimeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "idleTimeoutMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLifetimeMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keystore": {
+          "type": "string"
+        },
+        "keystorePassword": {
+          "type": "string"
+        },
+        "keystoreType": {
+          "type": "string"
+        },
+        "keyAlias": {
+          "type": "string"
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cookieName": {
+          "type": "string"
+        },
+        "lifetimeDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "sameSite": {
+          "type": "string",
+          "enum": [
+            "Strict",
+            "Lax",
+            "None"
+          ]
+        },
+        "secure": {
+          "type": "boolean"
+        },
+        "httpOnly": {
+          "type": "boolean"
+        }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "maxFileSize": {
+          "type": "string"
+        },
+        "maxHistory": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalSizeCap": {
+          "type": "string"
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable the server-side backup policy. When false, the scheduled backup does not run."
+        },
+        "directory": {
+          "type": "string",
+          "description": "Directory for .7z archives and their .json metadata. Relative paths are resolved against the config file."
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "time": {
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+              "description": "Local server time of the daily backup, HH:mm. Default 00:00."
+            }
+          }
+        },
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "copies": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 365,
+              "description": "Maximum number of archives kept. The oldest archive is deleted after a successful backup."
+            }
+          }
+        },
+        "compression": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "level": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9,
+              "description": "LZMA2 compression level. 9 is the strongest."
+            },
+            "dictionaryMb": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1536,
+              "description": "LZMA2 dictionary size in MB. Bigger values use more RAM but can help large archives."
+            }
+          }
+        },
+        "includeDatabase": {
+          "type": "boolean",
+          "description": "Include a pg_dump custom-format database backup inside the archive."
+        },
+        "includeFiles": {
+          "type": "boolean",
+          "description": "Include the encrypted user blobs from storage.dataDirectory."
+        },
+        "includePlanState": {
+          "type": "boolean",
+          "description": "Include storage.planStateFile."
+        },
+        "verifyAfterCreate": {
+          "type": "boolean",
+          "description": "Read the whole archive back and verify its CRC checksums after creation."
+        },
+        "catchUp": {
+          "type": "boolean",
+          "description": "Create a backup shortly after startup when the newest archive is missing or older than 24 hours."
+        },
+        "pgDumpPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Path to pg_dump or its bin directory. null means auto-detect from PATH or Program Files."
+        }
+      }
+    }
+  }
+}

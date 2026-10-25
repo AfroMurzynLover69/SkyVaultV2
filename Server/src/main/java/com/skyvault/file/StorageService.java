@@ -1,13 +1,12 @@
 package com.skyvault.file;
 
-import org.springframework.beans.factory.annotation.Value;
+import com.skyvault.config.StorageProperties;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -19,8 +18,8 @@ public class StorageService {
 
     private final Path root;
 
-    public StorageService(@Value("${skyvault.storage.directory:data/files}") String directory) {
-        this.root = Paths.get(directory).toAbsolutePath().normalize();
+    public StorageService(StorageProperties properties) {
+        this.root = Path.of(properties.directory()).toAbsolutePath().normalize();
         try {
             Files.createDirectories(root);
         } catch (IOException exception) {

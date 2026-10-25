@@ -29,4 +29,10 @@ logs/
 *.env
 !.env.example
 
+# Machine-specific server overrides (passwords, ports, paths)
+skyvault.config.local.json
+
+# Daily backup archives and metadata
+backups/
+
 data/

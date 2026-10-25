@@ -1,0 +1,103 @@
+{
+  "$schema": "./skyvault.config.schema.json",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8443,
+    "https": true,
+    "threads": {
+      "max": 512,
+      "minSpare": 16
+    },
+    "maxConnections": 8192,
+    "acceptCount": 512,
+    "connectionTimeoutMs": 20000,
+    "keepAliveTimeoutMs": 20000,
+    "maxHttpRequestHeaderSize": "16KB",
+    "maxHttpFormPostSize": "2MB",
+    "maxConcurrentUsers": 256,
+    "acquireTimeoutMs": 2000,
+    "gracefulShutdownTimeout": "30s",
+    "compression": {
+      "enabled": true,
+      "minResponseSize": "2KB",
+      "mimeTypes": [
+        "application/json",
+        "application/javascript",
+        "text/html",
+        "text/css",
+        "text/plain",
+        "image/svg+xml"
+      ]
+    }
+  },
+  "jvm": {
+    "heapMinMb": 512,
+    "heapMaxMb": 2048,
+    "activeProcessors": null,
+    "garbageCollector": "g1",
+    "directMemoryMb": null,
+    "exitOnOutOfMemory": true,
+    "tempDirectory": "data/tmp",
+    "extraArgs": []
+  },
+  "storage": {
+    "dataDirectory": "data/files",
+    "planStateFile": "data/plans.json",
+    "planStateRefreshMs": 30000,
+    "defaultQuotaGb": 5,
+    "maxUploadMb": 100,
+    "maxRequestMb": 110
+  },
+  "database": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "name": "skyvault",
+    "user": "skyvault",
+    "password": "skyvault",
+    "poolSize": 10,
+    "poolMinIdle": 2,
+    "connectionTimeoutMs": 30000,
+    "idleTimeoutMs": 600000,
+    "maxLifetimeMs": 1800000
+  },
+  "tls": {
+    "keystore": "classpath:skyvault-dev.p12",
+    "keystorePassword": "skyvault",
+    "keystoreType": "PKCS12",
+    "keyAlias": "skyvault"
+  },
+  "session": {
+    "cookieName": "skyvault_session",
+    "lifetimeDays": 7,
+    "sameSite": "Lax",
+    "secure": true,
+    "httpOnly": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/skyvault.log",
+    "maxFileSize": "10MB",
+    "maxHistory": 7,
+    "totalSizeCap": "100MB"
+  },
+  "backup": {
+    "enabled": true,
+    "directory": "backups",
+    "schedule": {
+      "time": "00:00"
+    },
+    "retention": {
+      "copies": 2
+    },
+    "compression": {
+      "level": 9,
+      "dictionaryMb": 64
+    },
+    "includeDatabase": true,
+    "includeFiles": true,
+    "includePlanState": true,
+    "verifyAfterCreate": true,
+    "catchUp": true,
+    "pgDumpPath": null
+  }
+}

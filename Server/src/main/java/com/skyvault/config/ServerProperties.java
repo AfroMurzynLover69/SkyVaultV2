@@ -1,16 +1,20 @@
 package com.skyvault.config;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
+@Validated
 @ConfigurationProperties(prefix = "skyvault.server")
 public record ServerProperties(
 
-        int maxConcurrentUsers,
+        @Min(1) int maxConcurrentUsers,
 
-        long acquireTimeoutMs,
+        @Min(0) long acquireTimeoutMs,
 
-        String name,
+        @NotBlank String name,
 
-        String version
+        @NotBlank String version
 ) {
 }

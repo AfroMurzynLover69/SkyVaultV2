@@ -4,7 +4,7 @@ Engineering thesis project.
 
 **Topic:** Implementation of the Zero-Knowledge architecture in an application that allows storing encrypted data in a computing cloud.
 
-Author: Patryk Rysinski · Kielce University of Technology · Teleinformatics
+Author: Patryk Rysiński · Kielce University of Technology · Teleinformatics
 
 ## Project status
 
@@ -14,14 +14,20 @@ galleries** (browser-generated thumbnails, no ffmpeg) and a **settings page with
 30-day storage plans** — with Mono as the default palette and three optional color
 themes, encrypting all data in the browser. Plan dates are kept by the server and
 mirrored to a plain-text file; an expired plan disables the account until it is renewed.
+Server startup is driven by `skyvault.config.json` (JVM heap and processors, Tomcat
+threads and connections, API limits, data paths, database pool, sessions, logging and
+server-side backups).
 
 ## Structure
 
 ```
 SkyVault\
-|-- SkyVault.ps1      <- LAUNCHER. Only starts the modules, no application logic.
+|-- SkyVault.ps1      <- LAUNCHER. Reads the config and starts the modules.
 |-- SkyVault.cmd      <- same as above, for double-click launch
 |-- pom.xml           <- project root (aggregates the modules)
+|-- skyvault.config.json        <- server configuration (JVM, HTTP, data, DB)
+|-- skyvault.config.schema.json <- JSON Schema for editors
+|-- skyvault.config.local.json  <- optional machine-local overrides (gitignored)
 |
 |-- Web\              <- WEB MODULE
 |   `-- src\main\resources\META-INF\resources\
@@ -39,6 +45,7 @@ SkyVault\
         |   |-- api\          <- /api/status, /api/ping
         |   |-- auth\         <- registration, login, crypto bundle
         |   |-- file\         <- file metadata, blobs, trash
+        |   |-- backup\       <- server-side LZMA2 backups
         |   |-- session\      <- sessions and endpoint protection
         |   |-- user\         <- user account
         |   |-- concurrency\  <- limit of 256 concurrent requests
@@ -151,15 +158,20 @@ plaintext content. That is the Zero-Knowledge boundary; the sections below descr
 | Folder / file | Responsibility |
 |---|---|
 | `SkyVault/` | repository root: launcher, aggregate `pom.xml`, documentation |
-| `SkyVault.ps1`, `SkyVault.cmd` | launcher only (build / run / test / clean); no application logic |
+| `SkyVault.ps1`, `SkyVault.cmd` | launcher: validates the config, applies JVM flags and starts the modules |
+| `skyvault.config.json` | base server config: heap, processors, Tomcat, limits, data paths, DB, sessions, logs |
+| `skyvault.config.local.json` | optional machine-local overlay, gitignored; good place for real passwords |
+| `skyvault.config.schema.json` | JSON Schema used by editors for validation and completion |
 | `SkyVault-api-test.ps1` | end-to-end API test against a running server |
 | `SkyVault-loadtest.ps1` | parallel load test that verifies the 256 limit and HTTP 429 |
 | `Web/` | web module: the static interface, packaged as a JAR |
 | `Web/.../META-INF/resources/` | `index.html`, `style.css`, `app.js`, `crypto.js`, `vendor/` (libsodium) |
 | `Server/` | server module: Spring Boot application; depends on Web |
-| `Server/.../com/skyvault/` | backend packages: `api`, `auth`, `file`, `plan`, `session`, `user`, `concurrency`, `config`, `error` |
-| `Server/.../resources/` | `application.properties` and Flyway migrations (`db/migration`) |
-| `data/` | runtime directory, gitignored: encrypted blobs in `data/files/u{id}/` and the plain-text plan state in `data/plans.json` |
+| `Server/.../com/skyvault/` | backend packages: `api`, `auth`, `file`, `backup`, `plan`, `session`, `user`, `concurrency`, `config`, `error` |
+| `Server/.../resources/` | `application.properties` fallbacks and Flyway migrations (`db/migration`) |
+| `data/` | runtime directory, gitignored: encrypted blobs in `data/files/u{id}/`, `data/plans.json` and `data/tmp/` |
+| `backups/` | runtime directory, gitignored: LZMA2 `.7z` archives and their `.json` metadata |
+| `logs/` | runtime log directory, gitignored; rolling `skyvault.log` |
 
 ## Technology stack
 
@@ -175,6 +187,7 @@ plaintext content. That is the Zero-Knowledge boundary; the sections below descr
 | Frontend | plain HTML, CSS and JavaScript; no framework, no build step |
 | Browser crypto | Web Crypto API (HKDF-SHA256, AES-GCM) + libsodium.js (Argon2id, local copy) |
 | Transport | JSON over HTTPS (TLS); multipart for encrypted uploads |
+| Backup compression | Apache Commons Compress + XZ (7z / LZMA2, pure Java) |
 | Tests | JUnit 5 / Spring Boot Test, plus PowerShell API and load scripts |
 
 ## Running
@@ -193,7 +206,17 @@ The launcher supports these modes:
 | `test` | run tests |
 | `clean` | clean the `target` directories |
 | `modules` | show the module list |
+| `config` | validate the config and print the effective values and Java command |
 | `help` | help |
+
+Useful switches:
+
+| Switch | Meaning |
+|---|---|
+| `-SkipTests` | build without running tests |
+| `-SkipBuild` | with `run`: start the existing JAR without rebuilding |
+| `-ConfigFile <path>` | use a different JSON config file |
+| `-NoLocalConfig` | ignore `skyvault.config.local.json` |
 
 If PowerShell blocks scripts:
 
@@ -204,26 +227,117 @@ powershell -ExecutionPolicy Bypass -File .\SkyVault.ps1 build
 Maven **is not** required — the project uses the `mvnw.cmd` wrapper, which downloads the right
 version by itself. Required: **JDK 25**, **PostgreSQL 18** and a set `JAVA_HOME`.
 
+## Server configuration
+
+Server startup is controlled by `skyvault.config.json` in the project root. The launcher
+validates the file, translates the JVM section into real Java flags, resolves relative paths
+against the config directory and exports the rest as Spring Boot properties before the JAR
+starts.
+
+```
+skyvault.config.json         base configuration, committed to the repository
+skyvault.config.local.json   optional local overlay, gitignored
+skyvault.config.schema.json  JSON Schema for editor validation/completion
+```
+
+Precedence, strongest first:
+
+1. environment variables (`SERVER_PORT`, `DB_PASSWORD`, `MAX_CONCURRENT_USERS`, ...),
+2. `skyvault.config.local.json`,
+3. `skyvault.config.json`,
+4. defaults in `Server/src/main/resources/application.properties` (only relevant when the JAR
+   is started directly without the launcher).
+
+Show the effective result without starting the server:
+
+```powershell
+.\SkyVault.ps1 config
+.\SkyVault.ps1 config -ConfigFile .\my-server.json
+```
+
+> **RAM and cores are JVM-level settings.** The application cannot change them at runtime.
+> `jvm.heapMinMb`, `jvm.heapMaxMb`, `jvm.activeProcessors` and `jvm.garbageCollector` become
+> `-Xms`, `-Xmx`, `-XX:ActiveProcessorCount` and the selected GC flag. Changing them always
+> requires a restart. Starting the JAR directly with `java -jar` skips these flags; use the
+> launcher or pass them manually.
+
+### Listener, threads and connections
+
+| Key | Default | Meaning |
+|---|---|---|
+| `server.host` | `0.0.0.0` | bind address; `0.0.0.0` means all interfaces |
+| `server.port` | `8443` | HTTPS port |
+| `server.https` | `true` | TLS on/off (HTTP is only for development or a trusted proxy) |
+| `server.threads.max` | `512` | maximum Tomcat request threads |
+| `server.threads.minSpare` | `16` | minimum idle Tomcat threads |
+| `server.maxConnections` | `8192` | maximum simultaneous TCP connections |
+| `server.acceptCount` | `512` | OS accept queue when all threads are busy |
+| `server.connectionTimeoutMs` | `20000` | time to wait for the request line/headers |
+| `server.keepAliveTimeoutMs` | `20000` | keep-alive idle time |
+| `server.maxConcurrentUsers` | `256` | application semaphore for `/api/**` |
+| `server.acquireTimeoutMs` | `2000` | wait for a free API slot before HTTP 429 |
+| `server.maxHttpRequestHeaderSize` | `16KB` | maximum request header size |
+| `server.maxHttpFormPostSize` | `2MB` | maximum classic form body |
+
+### JVM, data and database
+
+| Key | Default | Meaning |
+|---|---|---|
+| `jvm.heapMinMb` / `jvm.heapMaxMb` | `512` / `2048` | initial and maximum Java heap |
+| `jvm.activeProcessors` | `null` | processor count seen by the JVM; `null` = all logical CPUs |
+| `jvm.garbageCollector` | `g1` | `g1`, `zgc`, `parallel`, `serial` or `default` |
+| `jvm.directMemoryMb` | `null` | optional direct-memory cap |
+| `jvm.tempDirectory` | `data/tmp` | `java.io.tmpdir`, also used by multipart uploads |
+| `storage.dataDirectory` | `data/files` | encrypted blobs, one `u{id}` directory per user |
+| `storage.planStateFile` | `data/plans.json` | plain-text plan mirror |
+| `storage.defaultQuotaGb` | `5` | initial quota for a new account |
+| `storage.maxUploadMb` / `storage.maxRequestMb` | `100` / `110` | multipart limits |
+| `database.host` / `port` / `name` | `127.0.0.1` / `5432` / `skyvault` | PostgreSQL target |
+| `database.user` / `password` | `skyvault` / `skyvault` | development credentials |
+| `database.poolSize` / `poolMinIdle` | `10` / `2` | HikariCP pool |
+| `session.lifetimeDays` | `7` | browser session and cookie lifetime |
+| `session.cookieName` | `skyvault_session` | session cookie name |
+| `logging.level` / `logging.file` | `INFO` / `logs/skyvault.log` | root log level and rolling file |
+
+The launcher honours the documented short names (`PORT`, `DB_*`, `MAX_CONCURRENT_USERS`,
+`SKYVAULT_DATA_DIR`, ...) and the full Spring form for the remaining properties: uppercase the
+property name and replace dots with underscores, for example `server.maxConnections` →
+`SERVER_TOMCAT_MAX_CONNECTIONS`. `jvm.extraArgs` is JSON-only.
+
+Put real passwords in `skyvault.config.local.json` or the environment, not in the committed
+base file. The local overlay is ignored by Git.
+
+### Live view
+
+`GET /api/system` returns a read-only snapshot of the effective configuration and runtime:
+JVM flags, heap usage, CPU load, thread counts, disk space, Tomcat limits, Hikari pool,
+session settings and the sanitized database URL. Passwords and session tokens are never
+returned. `GET /api/status` stays the small concurrency-status endpoint used by the load test.
+
 ## Addresses
 
 | Address | Description |
 |---|---|
 | `https://localhost:8443/` | SkyVault interface |
 | `https://localhost:8443/api/status` | server status and concurrency counter |
+| `https://localhost:8443/api/system` | effective config, JVM, CPU, memory, disk and pool snapshot |
+| `https://localhost:8443/api/backup` | backup policy and the archives on disk |
 | `https://localhost:8443/api/ping?delayMs=500` | request with a simulated delay |
 | `https://localhost:8443/actuator/health` | application and database health |
 | `https://<server-ip>:8443/` | the same interface from another computer in the LAN |
 
-The server serves **only HTTPS** (there is no HTTP connector). The development certificate is a
-self-signed PKCS12 file: `Server/src/main/resources/skyvault-dev.p12`, alias `skyvault`,
-password `skyvault`, valid for 10 years. The SAN list contains `localhost`, `127.0.0.1`, `::1`,
-the computer name and the LAN address. The browser shows a certificate warning once — choose
-**Advanced → Proceed**. The page is then a secure context and Web Crypto works, also from
-another computer.
+The host, port and TLS switch come from `server.host`, `server.port` and `server.https` in
+`skyvault.config.json`. The server serves **only HTTPS** by default (there is no HTTP connector).
+The development certificate is a self-signed PKCS12 file:
+`Server/src/main/resources/skyvault-dev.p12`, alias `skyvault`, password `skyvault`, valid for
+10 years. The SAN list contains `localhost`, `127.0.0.1`, `::1`, the computer name and the LAN
+address. The browser shows a certificate warning once — choose **Advanced → Proceed**. The page
+is then a secure context and Web Crypto works, also from another computer.
 
 > The certificate is for development only. To use the project outside the LAN, replace it with
-> a certificate from a trusted CA. The password can be overridden with `SSL_KEYSTORE_PASSWORD`,
-> and the port with `PORT`.
+> a certificate from a trusted CA. Configure it through `tls.keystore` and `tls.keystorePassword`
+> in `skyvault.config.json`; `SSL_KEYSTORE_PASSWORD` and `PORT` still work as environment
+> overrides.
 
 If another computer cannot connect, allow the port in Windows Firewall (administrator shell).
 The rule must match the network profile — `Private` for a home or laboratory network:
@@ -407,12 +521,13 @@ The server handles **at most 256 users** at the same time.
 
 The mechanism has two layers:
 
-1. **Tomcat thread pool** — `server.tomcat.threads.max=512`. Deliberately more than 256:
+1. **Tomcat thread pool** — `server.threads.max` (512 by default). Deliberately more than 256:
    the surplus traffic reaches the application semaphore and is rejected quickly, instead of
    waiting silently in the connector queue.
-2. **Application semaphore** — `ConcurrencyLimiter` with 256 slots. Requests to `/api/**` take
-   a slot for the duration of handling. When all 256 are taken, a request waits
-   `acquire-timeout-ms` (2000 ms by default) and then gets **HTTP 429 Too Many Requests**.
+2. **Application semaphore** — `ConcurrencyLimiter` with `server.maxConcurrentUsers` slots
+   (256 by default). Requests to `/api/**` take a slot for the duration of handling. When all
+   256 are taken, a request waits `server.acquireTimeoutMs` (2000 ms by default) and then gets
+   **HTTP 429 Too Many Requests**.
 
 Requests for static files and `/actuator/**` are **not** counted — thanks to that the site
 always loads, and monitoring works even under full load.
@@ -420,20 +535,28 @@ always loads, and monitoring works even under full load.
 Measured with `.\SkyVault-loadtest.ps1 -Requests 640 -DelayMs 3000`: 427 x `200`, 213 x `429`,
 peak load 256.
 
-Settings in `Server/src/main/resources/application.properties`:
+Relevant keys in `skyvault.config.json`:
 
-```properties
-server.tomcat.threads.max=512
-skyvault.server.max-concurrent-users=256
-skyvault.server.acquire-timeout-ms=2000
+```json
+{
+  "server": {
+    "threads": { "max": 512, "minSpare": 16 },
+    "maxConnections": 8192,
+    "acceptCount": 512,
+    "maxConcurrentUsers": 256,
+    "acquireTimeoutMs": 2000
+  }
+}
 ```
 
-They can be overridden without changing the code:
+They can be overridden without editing the file:
 
 ```powershell
 $env:MAX_CONCURRENT_USERS = 32
 .\SkyVault.ps1
 ```
+
+`.\SkyVault.ps1 config` prints the effective values before launch.
 
 ## Database
 
@@ -445,10 +568,14 @@ CREATE DATABASE skyvault OWNER skyvault;
 ```
 
 Default connection: `127.0.0.1:5432 / skyvault`, user `skyvault`, password `skyvault`.
-Override: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`.
+Configure it through `database.host`, `database.port`, `database.name`, `database.user`,
+`database.password`, `database.poolSize` and the timeout keys in `skyvault.config.json`.
+Environment variables still win: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
+`DB_POOL_SIZE`, `DB_POOL_MIN_IDLE`, `DB_CONNECTION_TIMEOUT_MS`, `DB_IDLE_TIMEOUT_MS`,
+`DB_MAX_LIFETIME_MS`.
 
-> The `skyvault` password is a **development-only** value. Before deployment, set
-> `DB_PASSWORD` from outside the repository.
+> The `skyvault` password is a **development-only** value. Before deployment, put the real one
+> in `skyvault.config.local.json` (gitignored) or `DB_PASSWORD` from outside the repository.
 
 Flyway migrations live in `Server/src/main/resources/db/migration`. The schema is described by
 `V1__init_schema.sql` (tables `app_user`, `user_session`, `stored_file`),
@@ -480,12 +607,87 @@ server-owned plan record and an audit trail.
 
 The `data/` directory is in `.gitignore`.
 
-| Variable | Default | Meaning |
+| Variable | Config key | Default | Meaning |
+|---|---|---|---|
+| `SKYVAULT_STORAGE_DIRECTORY` (alias `SKYVAULT_DATA_DIR`) | `storage.dataDirectory` | `data/files` | directory for blobs |
+| `SKYVAULT_STORAGE_PLAN_STATE_FILE` (alias `SKYVAULT_PLAN_FILE`) | `storage.planStateFile` | `data/plans.json` | plain-text plan state file |
+| `SKYVAULT_STORAGE_PLAN_STATE_REFRESH_MS` (alias `PLAN_STATE_REFRESH_MS`) | `storage.planStateRefreshMs` | `30000` | how often the expiry state is checked/written |
+| `SKYVAULT_STORAGE_DEFAULT_QUOTA_GB` (alias `DEFAULT_QUOTA_GB`) | `storage.defaultQuotaGb` | `5` | space limit per new account |
+| `JAVA_TMP_DIR` | `jvm.tempDirectory` | `data/tmp` | JVM and multipart temporary directory |
+
+The launcher resolves relative paths against the config file's directory and creates the
+directories before the JVM starts, so running from another working directory does not move the
+data.
+
+### Server-side backups
+
+The server creates the backups itself. Nothing is installed in Windows Task Scheduler and no
+external 7-Zip binary is used: `BackupService` writes 7z archives with LZMA2 compression through
+Apache Commons Compress and XZ, entirely in Java. The daily run, retention and archive
+verification are part of the Spring application, so they work whenever the server is running.
+
+Default policy:
+
+| Key | Default | Meaning |
 |---|---|---|
-| `SKYVAULT_DATA_DIR` | `data/files` | directory for blobs |
-| `SKYVAULT_PLAN_FILE` | `data/plans.json` | plain-text plan state file |
-| `PLAN_STATE_REFRESH_MS` | `30000` | how often the expiry state is checked/written |
-| `DEFAULT_QUOTA_GB` | `5` | space limit per new account |
+| `backup.enabled` | `true` | enable the automatic backup |
+| `backup.schedule.time` | `00:00` | local server time of the daily run |
+| `backup.retention.copies` | `2` | number of newest archives kept |
+| `backup.compression.level` | `9` | LZMA2 level (0–9; 9 is the strongest) |
+| `backup.compression.dictionaryMb` | `64` | LZMA2 dictionary size in MB |
+| `backup.directory` | `backups` | archive and metadata directory |
+| `backup.includeDatabase` | `true` | `pg_dump` custom-format dump |
+| `backup.includeFiles` | `true` | encrypted blobs from `storage.dataDirectory` |
+| `backup.includePlanState` | `true` | `storage.planStateFile` |
+| `backup.verifyAfterCreate` | `true` | read the archive back and verify CRC checksums |
+| `backup.catchUp` | `true` | startup catch-up when the newest archive is older than 24 h |
+| `backup.pgDumpPath` | `null` | `pg_dump` path or PostgreSQL `bin` directory; `null` = PATH / Program Files |
+
+The schedule is stored as `HH:mm`; the launcher translates it to the Spring cron expression
+`SKYVAULT_BACKUP_CRON` (`0 minute hour * * *`). The environment variables are named
+`SKYVAULT_BACKUP_ENABLED`, `SKYVAULT_BACKUP_DIRECTORY`, `SKYVAULT_BACKUP_KEEP_COPIES`,
+`SKYVAULT_BACKUP_COMPRESSION_LEVEL`, `SKYVAULT_BACKUP_DICTIONARY_MB`,
+`SKYVAULT_BACKUP_INCLUDE_DATABASE`, `SKYVAULT_BACKUP_INCLUDE_FILES`,
+`SKYVAULT_BACKUP_INCLUDE_PLAN_STATE`, `SKYVAULT_BACKUP_VERIFY_AFTER_CREATE`,
+`SKYVAULT_BACKUP_CATCH_UP` and `SKYVAULT_BACKUP_PG_DUMP_PATH`.
+
+Layout of every archive:
+
+```
+<user files — the same relative paths as in data/files>
+.skyvault-backup/database.dump
+.skyvault-backup/plans.json
+.skyvault-backup/manifest.json
+.skyvault-backup/RESTORE.txt
+```
+
+A `.json` sidecar next to each archive records the SHA-256, size, creation time, kind and
+component list. After a successful run the server deletes the oldest archives above the
+retention limit. If the database is included and `pg_dump` fails, the whole run fails and no
+incomplete archive is left behind. `pg_dump` comes from the PostgreSQL client tools; the
+default detection checks `PATH` and `C:\Program Files\PostgreSQL\*\bin`.
+
+`GET /api/backup` returns the effective policy, whether a backup is currently running, and all
+archives with their metadata.
+
+Restore (stop the server first):
+
+```powershell
+# 1. user files
+7z x backups\skyvault-20261025-000000.7z -odata\files -x!.skyvault-backup
+
+# 2. database (password is not stored in the archive)
+$env:PGPASSWORD = 'skyvault'
+pg_restore --clean --if-exists --no-owner --no-privileges --single-transaction --exit-on-error `
+    --host 127.0.0.1 --port 5432 --username skyvault --dbname skyvault `
+    .skyvault-backup\database.dump
+
+# 3. plan state
+Copy-Item .skyvault-backup\plans.json data\plans.json
+```
+
+Use any 7-Zip-compatible extractor; the project no longer ships `7zr.exe`. The manifest and the
+sidecar contain the checksums needed to confirm that the restored dump and plan file are intact.
 
 ## Tests
 
@@ -494,6 +696,7 @@ The `data/` directory is in `.gitignore`.
 ```
 
 - `ServerApplicationTests` — whether the Spring context starts (configuration, database, Flyway).
+- `BackupServiceTests` — LZMA2 archive contents, metadata, checksums and the two-copy retention.
 - `ConcurrencyLimiterTests` — whether the concurrency limit is actually not exceeded
   with 200 parallel requests.
 

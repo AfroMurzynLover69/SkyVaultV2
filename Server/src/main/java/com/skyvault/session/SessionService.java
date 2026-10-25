@@ -8,6 +8,7 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.skyvault.auth.CryptoPackage;
+import com.skyvault.config.SessionProperties;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -18,18 +19,20 @@ import java.util.Optional;
 @Service
 public class SessionService {
 
-    public static final String COOKIE_NAME = "skyvault_session";
     public static final String REQUEST_ATTRIBUTE = "skyvaultUserId";
 
     private static final Logger log = LoggerFactory.getLogger(SessionService.class);
     private static final int TOKEN_BYTES = 32;
-    private static final Duration SESSION_LIFETIME = Duration.ofDays(7);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final UserSessionRepository repository;
+    private final SessionProperties properties;
+    private final Duration lifetime;
 
-    public SessionService(UserSessionRepository repository) {
+    public SessionService(UserSessionRepository repository, SessionProperties properties) {
         this.repository = repository;
+        this.properties = properties;
+        this.lifetime = properties.lifetime();
     }
 
     @Transactional
@@ -43,14 +46,14 @@ public class SessionService {
                 CryptoPackage.sha256Hex(token),
                 userId,
                 now,
-                now.plus(SESSION_LIFETIME)));
+                now.plus(lifetime)));
 
-        return ResponseCookie.from(COOKIE_NAME, token)
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Lax")
+        return ResponseCookie.from(properties.cookieName(), token)
+                .httpOnly(properties.httpOnly())
+                .secure(properties.secure())
+                .sameSite(properties.sameSite())
                 .path("/")
-                .maxAge(SESSION_LIFETIME)
+                .maxAge(lifetime)
                 .build();
     }
 
@@ -86,10 +89,10 @@ public class SessionService {
     }
 
     public ResponseCookie clearedCookie() {
-        return ResponseCookie.from(COOKIE_NAME, "")
-                .httpOnly(true)
-                .secure(true)
-                .sameSite("Lax")
+        return ResponseCookie.from(properties.cookieName(), "")
+                .httpOnly(properties.httpOnly())
+                .secure(properties.secure())
+                .sameSite(properties.sameSite())
                 .path("/")
                 .maxAge(0)
                 .build();
@@ -115,7 +118,7 @@ public class SessionService {
             return null;
         }
         for (Cookie cookie : cookies) {
-            if (COOKIE_NAME.equals(cookie.getName())) {
+            if (properties.cookieName().equals(cookie.getName())) {
                 return cookie.getValue();
             }
         }

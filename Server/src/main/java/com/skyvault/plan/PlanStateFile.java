@@ -1,10 +1,10 @@
 package com.skyvault.plan;
 
+import com.skyvault.config.StorageProperties;
 import com.skyvault.user.AppUser;
 import com.skyvault.user.AppUserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -47,10 +46,10 @@ public class PlanStateFile {
 
     public PlanStateFile(AppUserRepository userRepository,
                          JsonMapper jsonMapper,
-                         @Value("${skyvault.storage.plan-state-file:data/plans.json}") String planStateFile) {
+                         StorageProperties properties) {
         this.userRepository = userRepository;
         this.jsonMapper = jsonMapper;
-        this.file = Paths.get(planStateFile).toAbsolutePath().normalize();
+        this.file = Path.of(properties.planStateFile()).toAbsolutePath().normalize();
     }
 
     @EventListener(ApplicationReadyEvent.class)
