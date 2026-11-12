@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.skyvault.error.ApiException;
+import com.skyvault.logging.RequestLogFilter;
 import com.skyvault.session.SessionService;
 import com.skyvault.user.AppUser;
 
@@ -32,7 +33,9 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<SessionResponse> register(@Valid @RequestBody RegisterRequest request,
+                                                    HttpServletRequest httpRequest,
                                                     HttpServletResponse response) {
+        httpRequest.setAttribute(RequestLogFilter.USER_LABEL_ATTRIBUTE, request.email());
         AppUser user = authService.register(
                 request.email(),
                 request.authVerifier(),
@@ -45,7 +48,9 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request,
+                                                 HttpServletRequest httpRequest,
                                                  HttpServletResponse response) {
+        httpRequest.setAttribute(RequestLogFilter.USER_LABEL_ATTRIBUTE, request.email());
         AppUser user = authService.authenticate(request.email(), request.authVerifier())
                 .orElseThrow(() -> ApiException.unauthorized("Invalid email or password"));
         return withSession(user, response);

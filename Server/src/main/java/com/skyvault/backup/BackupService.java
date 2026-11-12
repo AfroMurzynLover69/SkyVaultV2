@@ -523,12 +523,25 @@ public class BackupService {
         String pathVariable = System.getenv("PATH");
         if (pathVariable != null) {
             for (String entry : pathVariable.split(Pattern.quote(File.pathSeparator))) {
-                if (entry.isBlank()) {
+                // A malformed PATH entry (for example a stray quote) must not stop
+                // the search; just like Windows, skip it and try the next one.
+                String cleaned = entry.trim();
+                if (cleaned.startsWith("\"")) {
+                    cleaned = cleaned.substring(1);
+                }
+                if (cleaned.endsWith("\"")) {
+                    cleaned = cleaned.substring(0, cleaned.length() - 1);
+                }
+                if (cleaned.isBlank()) {
                     continue;
                 }
-                Path candidate = Path.of(entry).resolve(executable);
-                if (Files.isRegularFile(candidate)) {
-                    return candidate;
+                try {
+                    Path candidate = Path.of(cleaned).resolve(executable);
+                    if (Files.isRegularFile(candidate)) {
+                        return candidate;
+                    }
+                } catch (RuntimeException ignored) {
+                    // Not a usable path; keep looking.
                 }
             }
         }

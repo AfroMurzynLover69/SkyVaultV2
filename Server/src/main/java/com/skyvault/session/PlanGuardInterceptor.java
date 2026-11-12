@@ -4,6 +4,8 @@ import com.skyvault.user.AppUser;
 import com.skyvault.user.AppUserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 import tools.jackson.databind.json.JsonMapper;
@@ -23,6 +25,8 @@ import java.util.Map;
  */
 @Component
 public class PlanGuardInterceptor implements HandlerInterceptor {
+
+    private static final Logger log = LoggerFactory.getLogger("Activity");
 
     private final AppUserRepository userRepository;
     private final JsonMapper jsonMapper;
@@ -51,6 +55,7 @@ public class PlanGuardInterceptor implements HandlerInterceptor {
         }
 
         if (!user.isPlanActive(OffsetDateTime.now())) {
+            log.warn("plan expired  u={}  path={}", userId, request.getRequestURI());
             String expiredOn = user.getPlanExpiresAt() == null
                     ? "an unknown date"
                     : user.getPlanExpiresAt().toLocalDate().toString();

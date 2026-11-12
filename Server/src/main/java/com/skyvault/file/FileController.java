@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import com.skyvault.error.ApiException;
+import com.skyvault.logging.RequestLogFilter;
 import com.skyvault.session.SessionService;
 
 import java.time.OffsetDateTime;
@@ -55,6 +56,7 @@ public class FileController {
                                            @RequestParam("virtualPathIv") String virtualPathIv,
                                            @RequestParam(name = "sizeBytes", defaultValue = "0") long sizeBytes,
                                            @RequestPart("blob") MultipartFile blob) {
+        request.setAttribute(RequestLogFilter.UPLOAD_SIZE_ATTRIBUTE, blob.getSize());
         StoredFile file = fileService.createFile(
                 currentUserId(request), pathHash, encryptedVirtualPath, virtualPathIv, sizeBytes, blob);
         return ResponseEntity.ok(FileView.of(file));
