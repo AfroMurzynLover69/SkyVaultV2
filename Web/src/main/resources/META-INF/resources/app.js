@@ -357,12 +357,47 @@
     }
   }
 
+  const API_TIMEOUT_MS = 15000;
+
   async function api(url, options = {}, settings = {}) {
-    const response = await fetch(url, {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      ...options
-    });
+    const { timeoutMs = API_TIMEOUT_MS, ...fetchOptions } = options;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = timeoutMs > 0 ? setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs) : null;
+
+    if (fetchOptions.signal) {
+      if (fetchOptions.signal.aborted) {
+        controller.abort();
+      } else {
+        fetchOptions.signal.addEventListener('abort', () => controller.abort(), { once: true });
+      }
+    }
+
+    let response;
+    try {
+      response = await fetch(url, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        ...fetchOptions,
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (timedOut) {
+        throw new ApiError(0,
+          'The server did not respond in time. Reload the page (Ctrl+F5), check that SkyVault is running, and try again.');
+      }
+      if (error && error.name === 'AbortError') {
+        throw error;
+      }
+      throw new ApiError(0, 'Could not reach the server. Check the connection and try again.');
+    } finally {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    }
 
     if (response.status === 401 && !settings.allow401) {
       expireSession();
@@ -888,19 +923,26 @@
       const wrapped = await C.wrapMasterKey(keys.kek, masterKey);
       const recoveryVerifier = await C.deriveRecoveryVerifier(masterKey);
       submit.textContent = 'Changing password...';
+      const slowTimer = setTimeout(() => {
+        submit.textContent = 'Still waiting for the server...';
+      }, 5000);
 
-      await api('/api/auth/recover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: email,
-          recoveryVerifier: C.toBase64(recoveryVerifier),
-          authVerifier: C.toBase64(keys.authVerifier),
-          passwordSalt: C.toBase64(salt),
-          wrappedMasterKey: C.toBase64(wrapped.ciphertext),
-          wrappedMasterKeyIv: C.toBase64(wrapped.iv)
-        })
-      }, { allow401: true });
+      try {
+        await api('/api/auth/recover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email,
+            recoveryVerifier: C.toBase64(recoveryVerifier),
+            authVerifier: C.toBase64(keys.authVerifier),
+            passwordSalt: C.toBase64(salt),
+            wrappedMasterKey: C.toBase64(wrapped.ciphertext),
+            wrappedMasterKeyIv: C.toBase64(wrapped.iv)
+          })
+        }, { allow401: true });
+      } finally {
+        clearTimeout(slowTimer);
+      }
 
       C.storeMasterKey(email, masterKey);
       closeRecovery();
@@ -3042,7 +3084,7 @@
   }
 
   async function fetchPlain(entry) {
-    const response = await api('/api/files/' + entry.pathHash + '/content');
+    const response = await api('/api/files/' + entry.pathHash + '/content', { timeoutMs: 0 });
     const buffer = await response.arrayBuffer();
     return C.decryptBlob(buffer);
   }
@@ -3330,7 +3372,7 @@
         form.append('sizeBytes', String(file.size));
         form.append('blob', encrypted, 'blob.bin');
 
-        await api('/api/files', { method: 'POST', body: form });
+        await api('/api/files', { method: 'POST', body: form, timeoutMs: 0 });
         projectedUsed += file.size;
         succeeded += 1;
         setUploadItem(index, 'done', 'Encrypted and uploaded');
