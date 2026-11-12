@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 
 @Entity
@@ -38,7 +39,15 @@ public class UserSession {
     }
 
     public boolean isExpired() {
-        return expiresAt.isBefore(OffsetDateTime.now());
+        return isExpired(OffsetDateTime.now());
+    }
+
+    public boolean isExpired(OffsetDateTime now) {
+        return expiresAt.isBefore(now);
+    }
+
+    public boolean isIdle(Duration timeout, OffsetDateTime now) {
+        return lastSeenAt.plus(timeout).isBefore(now);
     }
 
     public String getTokenHash() {

@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseCookie;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.skyvault.auth.CryptoPackage;
@@ -28,11 +29,13 @@ public class SessionService {
     private final UserSessionRepository repository;
     private final SessionProperties properties;
     private final Duration lifetime;
+    private final Duration idleTimeout;
 
     public SessionService(UserSessionRepository repository, SessionProperties properties) {
         this.repository = repository;
         this.properties = properties;
         this.lifetime = properties.lifetime();
+        this.idleTimeout = properties.idleTimeout();
     }
 
     @Transactional
@@ -65,16 +68,23 @@ public class SessionService {
         }
 
         String tokenHash = CryptoPackage.sha256Hex(token);
+        OffsetDateTime now = OffsetDateTime.now();
         return repository.findById(tokenHash)
                 .filter(session -> {
-                    if (session.isExpired()) {
-                        repository.deleteById(tokenHash);
+                    boolean expired = session.isExpired(now);
+                    boolean idle = session.isIdle(idleTimeout, now);
+                    if (expired || idle) {
+                        repository.delete(session);
+                        if (idle && !expired) {
+                            log.info("Session closed after {} minutes of inactivity  u={}",
+                                    idleTimeout.toMinutes(), session.getUserId());
+                        }
                         return false;
                     }
                     return true;
                 })
                 .map(session -> {
-                    session.touch(OffsetDateTime.now());
+                    session.touch(now);
                     return session.getUserId();
                 });
     }
@@ -103,11 +113,14 @@ public class SessionService {
         repository.deleteByUserId(userId);
     }
 
+    @Scheduled(initialDelayString = "${skyvault.session.purge-interval-ms:60000}",
+            fixedDelayString = "${skyvault.session.purge-interval-ms:60000}")
     @Transactional
     public int purgeExpired() {
-        int removed = repository.deleteExpired(OffsetDateTime.now());
+        OffsetDateTime now = OffsetDateTime.now();
+        int removed = repository.deleteExpiredOrIdle(now, now.minus(idleTimeout));
         if (removed > 0) {
-            log.info("Removed {} expired sessions", removed);
+            log.info("Removed {} expired or idle sessions", removed);
         }
         return removed;
     }

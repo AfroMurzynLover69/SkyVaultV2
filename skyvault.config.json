@@ -44,9 +44,7 @@
     "dataDirectory": "data/files",
     "planStateFile": "data/plans.json",
     "planStateRefreshMs": 30000,
-    "defaultQuotaGb": 5,
-    "maxUploadMb": 100,
-    "maxRequestMb": 110
+    "defaultQuotaGb": 5
   },
   "database": {
     "host": "127.0.0.1",
@@ -69,6 +67,7 @@
   "session": {
     "cookieName": "skyvault_session",
     "lifetimeDays": 7,
+    "idleTimeoutMinutes": 10,
     "sameSite": "Lax",
     "secure": true,
     "httpOnly": true

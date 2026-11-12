@@ -11,8 +11,8 @@ public interface UserSessionRepository extends JpaRepository<UserSession, String
 
     @Modifying
     @Transactional
-    @Query("delete from UserSession s where s.expiresAt < :now")
-    int deleteExpired(OffsetDateTime now);
+    @Query("delete from UserSession s where s.expiresAt < :now or s.lastSeenAt < :idleBefore")
+    int deleteExpiredOrIdle(OffsetDateTime now, OffsetDateTime idleBefore);
 
     @Modifying
     @Transactional

@@ -209,11 +209,6 @@ function Get-EffectiveSettings {
     $planStateFile = Resolve-ConfigPath ([string](Get-EffectiveValue $config 'storage.planStateFile' 'SKYVAULT_STORAGE_PLAN_STATE_FILE' 'SKYVAULT_PLAN_FILE' 'data/plans.json')) $baseDirectory 'storage.planStateFile'
     $planStateRefreshMs = ConvertTo-LongValue (Get-EffectiveValue $config 'storage.planStateRefreshMs' 'SKYVAULT_STORAGE_PLAN_STATE_REFRESH_MS' 'PLAN_STATE_REFRESH_MS' 30000) 'storage.planStateRefreshMs' 1000 3600000
     $defaultQuotaGb = ConvertTo-LongValue (Get-EffectiveValue $config 'storage.defaultQuotaGb' 'SKYVAULT_STORAGE_DEFAULT_QUOTA_GB' 'DEFAULT_QUOTA_GB' 5) 'storage.defaultQuotaGb' 1 10240
-    $maxUploadMb = ConvertTo-LongValue (Get-EffectiveValue $config 'storage.maxUploadMb' 'SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE_MB' $null 100) 'storage.maxUploadMb' 1 10000
-    $maxRequestMb = ConvertTo-LongValue (Get-EffectiveValue $config 'storage.maxRequestMb' 'SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE_MB' $null 110) 'storage.maxRequestMb' 1 10000
-    if ($maxRequestMb -lt $maxUploadMb) {
-        throw "storage.maxRequestMb ($maxRequestMb) cannot be smaller than storage.maxUploadMb ($maxUploadMb)."
-    }
 
     # --- database -----------------------------------------------------------
     $dbHost = [string](Get-EffectiveValue $config 'database.host' 'DB_HOST' $null '127.0.0.1')
@@ -250,6 +245,7 @@ function Get-EffectiveSettings {
     # --- sessions -----------------------------------------------------------
     $sessionCookieName = [string](Get-EffectiveValue $config 'session.cookieName' 'SKYVAULT_SESSION_COOKIE_NAME' 'SESSION_COOKIE_NAME' 'skyvault_session')
     $sessionLifetimeDays = ConvertTo-IntValue (Get-EffectiveValue $config 'session.lifetimeDays' 'SKYVAULT_SESSION_LIFETIME_DAYS' 'SESSION_LIFETIME_DAYS' 7) 'session.lifetimeDays' 1 365
+    $sessionIdleTimeoutMinutes = ConvertTo-IntValue (Get-EffectiveValue $config 'session.idleTimeoutMinutes' 'SKYVAULT_SESSION_IDLE_TIMEOUT_MINUTES' 'SESSION_IDLE_TIMEOUT_MINUTES' 10) 'session.idleTimeoutMinutes' 1 1440
     $sessionSameSiteRaw = [string](Get-EffectiveValue $config 'session.sameSite' 'SKYVAULT_SESSION_SAME_SITE' 'SESSION_COOKIE_SAME_SITE' 'Lax')
     switch ($sessionSameSiteRaw.Trim().ToLowerInvariant()) {
         'strict' { $sessionSameSite = 'Strict' }
@@ -344,8 +340,6 @@ function Get-EffectiveSettings {
         PlanStateFile            = $planStateFile
         PlanStateRefreshMs       = $planStateRefreshMs
         DefaultQuotaGb           = $defaultQuotaGb
-        MaxUploadMb              = $maxUploadMb
-        MaxRequestMb             = $maxRequestMb
         DbHost                   = $dbHost
         DbPort                   = $dbPort
         DbName                   = $dbName
@@ -363,6 +357,7 @@ function Get-EffectiveSettings {
         TlsAlias                 = $tlsAlias
         SessionCookieName        = $sessionCookieName
         SessionLifetimeDays      = $sessionLifetimeDays
+        SessionIdleTimeoutMinutes = $sessionIdleTimeoutMinutes
         SessionSameSite          = $sessionSameSite
         SessionSecure            = $sessionSecure
         SessionHttpOnly          = $sessionHttpOnly
@@ -450,8 +445,6 @@ function Set-ServerEnvironment {
         SKYVAULT_BACKUP_VERIFY_AFTER_CREATE         = ([string]$Settings.Backup.VerifyAfterCreate).ToLowerInvariant()
         SKYVAULT_BACKUP_CATCH_UP                    = ([string]$Settings.Backup.CatchUp).ToLowerInvariant()
         SKYVAULT_BACKUP_PG_DUMP_PATH                = if ($null -eq $Settings.Backup.PgDumpPath) { '' } else { $Settings.Backup.PgDumpPath }
-        SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE      = "$($Settings.MaxUploadMb)MB"
-        SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE   = "$($Settings.MaxRequestMb)MB"
         SPRING_DATASOURCE_URL                       = $Settings.DbUrl
         SPRING_DATASOURCE_USERNAME                  = $Settings.DbUser
         SPRING_DATASOURCE_PASSWORD                  = $Settings.DbPassword
@@ -462,6 +455,7 @@ function Set-ServerEnvironment {
         SPRING_DATASOURCE_HIKARI_MAX_LIFETIME       = [string]$Settings.DbMaxLifetimeMs
         SKYVAULT_SESSION_COOKIE_NAME                = $Settings.SessionCookieName
         SKYVAULT_SESSION_LIFETIME_DAYS              = [string]$Settings.SessionLifetimeDays
+        SKYVAULT_SESSION_IDLE_TIMEOUT_MINUTES       = [string]$Settings.SessionIdleTimeoutMinutes
         SKYVAULT_SESSION_SAME_SITE                  = $Settings.SessionSameSite
         SKYVAULT_SESSION_SECURE                     = ([string]$Settings.SessionSecure).ToLowerInvariant()
         SKYVAULT_SESSION_HTTP_ONLY                  = ([string]$Settings.SessionHttpOnly).ToLowerInvariant()
@@ -506,12 +500,12 @@ function Show-ConfigSummary {
     if ($Settings.PhysicalMemoryMb -gt 0) {
         Write-Host "  Physical RAM: $($Settings.PhysicalMemoryMb) MB"
     }
-    Write-Host "  Upload:       $($Settings.MaxUploadMb) MB file / $($Settings.MaxRequestMb) MB request"
+    Write-Host "  Upload:       no file-size limit (account quota still applies)"
     Write-Host "  Data:         $($Settings.DataDirectory)"
     Write-Host "  Plan state:   $($Settings.PlanStateFile)"
     Write-Host "  Temp:         $($Settings.TempDirectory)"
     Write-Host "  Database:     $($Settings.DbUser)@$($Settings.DbHost):$($Settings.DbPort)/$($Settings.DbName), pool $($Settings.DbPoolSize)-$($Settings.DbPoolMinIdle)"
-    Write-Host "  Session:      cookie '$($Settings.SessionCookieName)', $($Settings.SessionLifetimeDays) days, SameSite=$($Settings.SessionSameSite)"
+    Write-Host "  Session:      cookie '$($Settings.SessionCookieName)', $($Settings.SessionLifetimeDays) days, idle logout after $($Settings.SessionIdleTimeoutMinutes) min, SameSite=$($Settings.SessionSameSite)"
     Write-Host "  Logging:      $($Settings.LogLevel) -> $($Settings.LogFile)"
     $backupSchedule = if ($Settings.Backup.Enabled) { "daily at $($Settings.Backup.Time)" } else { 'disabled' }
     Write-Host "  Backup:       $backupSchedule -> $($Settings.Backup.Directory), keep $($Settings.Backup.Copies) copies, LZMA2 level $($Settings.Backup.CompressionLevel)"

@@ -292,11 +292,11 @@ Show the effective result without starting the server:
 | `storage.dataDirectory` | `data/files` | encrypted blobs, one `u{id}` directory per user |
 | `storage.planStateFile` | `data/plans.json` | plain-text plan mirror |
 | `storage.defaultQuotaGb` | `5` | initial quota for a new account |
-| `storage.maxUploadMb` / `storage.maxRequestMb` | `100` / `110` | multipart limits |
 | `database.host` / `port` / `name` | `127.0.0.1` / `5432` / `skyvault` | PostgreSQL target |
 | `database.user` / `password` | `skyvault` / `skyvault` | development credentials |
 | `database.poolSize` / `poolMinIdle` | `10` / `2` | HikariCP pool |
 | `session.lifetimeDays` | `7` | browser session and cookie lifetime |
+| `session.idleTimeoutMinutes` | `10` | automatic sign-out after this much inactivity |
 | `session.cookieName` | `skyvault_session` | session cookie name |
 | `logging.level` / `logging.file` | `INFO` / `logs/skyvault.log` | root log level and rolling file |
 
@@ -401,6 +401,10 @@ to the client together with the metadata.
 `/api/auth/crypto` returns material with the correct shape even for a nonexistent address,
 so it cannot be used to check which accounts exist.
 
+A session ends after `session.idleTimeoutMinutes` (10 by default) without an authenticated
+request. The browser also signs out locally after 10 minutes without mouse, keyboard or
+scroll activity, so the interface returns to the login screen even before the next request.
+
 ### Changing the master password
 
 `POST /api/auth/password` changes only the wrapper around the master key. The client proves
@@ -471,6 +475,8 @@ Mechanics:
   or as a whole directory (`Upload folder` in the right-click menu). A dropped folder
   keeps its internal structure, including subfolders. A file is encrypted in the tab
   and only then sent; a name conflict is resolved automatically (`note (1).txt`).
+  There is no per-file size limit on the server; the account quota is the only storage
+  cap, and very large files are still bounded by the browser's available memory.
 - **Download and preview** — a download decrypts the blob in the browser. Preview supports
   images, videos, audio, PDF and text (`text/plain` and common code extensions).
 - **Media galleries** — Images, Videos and Music open in a gallery grid by default.

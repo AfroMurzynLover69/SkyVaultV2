@@ -22,6 +22,8 @@ public record SessionProperties(
 
         @Min(1) @Max(365) int lifetimeDays,
 
+        @Min(1) @Max(1440) int idleTimeoutMinutes,
+
         @NotBlank String sameSite,
 
         boolean secure,
@@ -39,6 +41,10 @@ public record SessionProperties(
 
     public Duration lifetime() {
         return Duration.ofDays(lifetimeDays);
+    }
+
+    public Duration idleTimeout() {
+        return Duration.ofMinutes(idleTimeoutMinutes);
     }
 
     private static String normalizeSameSite(String value) {

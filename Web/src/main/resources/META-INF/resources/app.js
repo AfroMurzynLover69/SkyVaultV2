@@ -3,7 +3,8 @@
 
   const C = window.SkyVaultCrypto;
 
-  const MAX_UPLOAD_BYTES = 100 * 1024 * 1024 - 4096;
+  const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+  const IDLE_CHECK_INTERVAL_MS = 5000;
   const PREVIEW_TEXT_LIMIT = 512 * 1024;
 
   const THEMES = ['mono', 'nord', 'forest', 'amber'];
@@ -121,6 +122,8 @@
   let modalAllowEmpty = false;
   let menuActions = [];
   let notifyTimer = null;
+  let idleTimer = null;
+  let lastActivityAt = 0;
   let themeSaveQueue = Promise.resolve();
 
   const thumbnailReady = new Map();
@@ -555,9 +558,44 @@
     await enterApp(profile);
   }
 
+  function startIdleTimer() {
+    stopIdleTimer();
+    lastActivityAt = Date.now();
+    idleTimer = setInterval(checkIdle, IDLE_CHECK_INTERVAL_MS);
+  }
+
+  function stopIdleTimer() {
+    if (idleTimer !== null) {
+      clearInterval(idleTimer);
+      idleTimer = null;
+    }
+  }
+
+  function noteActivity() {
+    if (state.inApp) {
+      lastActivityAt = Date.now();
+    }
+  }
+
+  function checkIdle() {
+    if (!state.inApp) {
+      return;
+    }
+    if (state.uploading) {
+      // A long upload is activity, not an idle account.
+      lastActivityAt = Date.now();
+      return;
+    }
+    if (Date.now() - lastActivityAt >= IDLE_TIMEOUT_MS) {
+      stopIdleTimer();
+      logout('idle');
+    }
+  }
+
   function enterApp(profile) {
     state.user = profile;
     state.inApp = true;
+    startIdleTimer();
     state.planExpired = profile.planActive === false;
     applyProfileTheme(profile);
     state.sessionStartedAt = Date.now();
@@ -583,6 +621,7 @@
   }
 
   function resetToAuth(message) {
+    stopIdleTimer();
     state.inApp = false;
     state.user = null;
     state.planExpired = false;
@@ -611,13 +650,15 @@
     resetToAuth('Session expired. Sign in again to recreate the master key from your password.');
   }
 
-  async function logout() {
+  async function logout(reason) {
+    const idle = reason === 'idle';
+    const message = idle ? 'Signed out after 10 minutes of inactivity.' : null;
     try {
-      await api('/api/auth/logout', { method: 'POST' });
+      await api('/api/auth/logout', { method: 'POST' }, { allow401: true });
     } catch (error) {
     }
-    resetToAuth(null);
-    notify('Signed out.');
+    resetToAuth(message);
+    notify(message || 'Signed out.', idle ? 'error' : 'info');
   }
 
   function offerRecoverySheet(email, masterKey) {
@@ -3032,6 +3073,7 @@
   }
 
   function updateUploadProgress(done, total) {
+    noteActivity();
     $('uploadMeter').style.width = total ? Math.round((done / total) * 100) + '%' : '0%';
     $('uploadSubtitle').textContent = done + ' of ' + total + ' · AES-GCM encryption in your browser';
   }
@@ -3063,9 +3105,6 @@
       reserved.add(path.toLowerCase());
 
       try {
-        if (file.size > MAX_UPLOAD_BYTES) {
-          throw new Error('The file exceeds 100 MB.');
-        }
         if (quota > 0 && projectedUsed + file.size > quota) {
           throw new Error('The account storage limit has been exceeded.');
         }
@@ -3333,7 +3372,16 @@
     $('helpButton').addEventListener('click', () => {
       $('aboutModal').hidden = false;
     });
-    $('logoutButton').addEventListener('click', logout);
+    $('logoutButton').addEventListener('click', () => logout());
+    ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((type) => {
+      document.addEventListener(type, noteActivity, { passive: true });
+    });
+    document.addEventListener('scroll', noteActivity, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        checkIdle();
+      }
+    });
     $('changePasswordButton').addEventListener('click', openPasswordChange);
     $('passwordForm').addEventListener('submit', handlePasswordChange);
     $('recoveryButton').addEventListener('click', downloadRecovery);

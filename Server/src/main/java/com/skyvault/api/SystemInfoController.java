@@ -163,8 +163,8 @@ public class SystemInfoController {
                 limiter.peak(),
                 limiter.rejected(),
                 limiter.acquireTimeoutMs(),
-                dataSizeBytes("spring.servlet.multipart.max-file-size", 100L * 1024 * 1024),
-                dataSizeBytes("spring.servlet.multipart.max-request-size", 110L * 1024 * 1024));
+                dataSizeBytes("spring.servlet.multipart.max-file-size", -1L),
+                dataSizeBytes("spring.servlet.multipart.max-request-size", -1L));
     }
 
     private StorageInfo storageInfo() {
