@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.skyvault.config.StorageProperties;
 import com.skyvault.error.ApiException;
+import com.skyvault.file.StorageService;
 import com.skyvault.plan.PlanStateFile;
 import com.skyvault.user.AppUser;
 import com.skyvault.user.AppUserRepository;
@@ -36,6 +37,7 @@ public class AuthService {
 
     private final AppUserRepository userRepository;
     private final PlanStateFile planStateFile;
+    private final StorageService storageService;
 
     private final long defaultQuotaBytes;
     private final SecureRandom random = new SecureRandom();
@@ -44,9 +46,11 @@ public class AuthService {
 
     public AuthService(AppUserRepository userRepository,
                        PlanStateFile planStateFile,
+                       StorageService storageService,
                        StorageProperties storageProperties) {
         this.userRepository = userRepository;
         this.planStateFile = planStateFile;
+        this.storageService = storageService;
         this.defaultQuotaBytes = storageProperties.defaultQuotaGb() * GIB;
 
         random.nextBytes(fakeSaltSecret);
@@ -57,6 +61,7 @@ public class AuthService {
     @Transactional
     public AppUser register(String rawEmail,
                             String authVerifier,
+                            String recoveryVerifier,
                             String passwordSalt,
                             String wrappedMasterKey,
                             String wrappedMasterKeyIv) {
@@ -65,7 +70,8 @@ public class AuthService {
         if (!isValidEmail(email)) {
             throw ApiException.badRequest("Invalid email address");
         }
-        if (!CryptoPackage.isValid(authVerifier, passwordSalt, wrappedMasterKey, wrappedMasterKeyIv)) {
+        if (!CryptoPackage.isValid(authVerifier, passwordSalt, wrappedMasterKey, wrappedMasterKeyIv)
+                || !CryptoPackage.isValidRecoveryVerifier(recoveryVerifier)) {
             throw ApiException.badRequest("Invalid crypto package");
         }
         if (userRepository.existsByEmail(email)) {
@@ -74,7 +80,8 @@ public class AuthService {
 
         AppUser user = new AppUser(
                 email,
-                CryptoPackage.hashAuthVerifier(authVerifier),
+                CryptoPackage.hashVerifier(authVerifier),
+                CryptoPackage.hashVerifier(recoveryVerifier),
                 passwordSalt,
                 wrappedMasterKey,
                 wrappedMasterKeyIv,
@@ -85,8 +92,10 @@ public class AuthService {
         return saved;
     }
 
-    @Transactional(readOnly = true)
-    public Optional<AppUser> authenticate(String rawEmail, String authVerifier) {
+    @Transactional
+    public Optional<AppUser> authenticate(String rawEmail,
+                                          String authVerifier,
+                                          String recoveryVerifier) {
         String email = normalizeEmail(rawEmail);
 
         if (authVerifier == null || authVerifier.isBlank()) {
@@ -98,7 +107,54 @@ public class AuthService {
         String storedHash = user.map(AppUser::getAuthVerifierHash).orElse(dummyVerifierHash);
         boolean matches = CryptoPackage.verifierMatches(authVerifier, storedHash);
 
-        return (matches && user.isPresent()) ? user : Optional.empty();
+        if (!matches || user.isEmpty()) {
+            return Optional.empty();
+        }
+
+        AppUser account = user.get();
+        // Accounts created before recovery support learn their recovery
+        // verifier on the first password login. A stolen session cannot do
+        // this because it never sees the password-derived auth verifier.
+        if (!account.hasRecoveryVerifier()
+                && CryptoPackage.isValidRecoveryVerifier(recoveryVerifier)) {
+            account.setRecoveryVerifierHash(CryptoPackage.hashVerifier(recoveryVerifier));
+            userRepository.save(account);
+        }
+        return Optional.of(account);
+    }
+
+    @Transactional
+    public AppUser recover(String rawEmail,
+                           String recoveryVerifier,
+                           String authVerifier,
+                           String passwordSalt,
+                           String wrappedMasterKey,
+                           String wrappedMasterKeyIv) {
+        String email = normalizeEmail(rawEmail);
+
+        if (!isValidEmail(email)
+                || !CryptoPackage.isValidRecoveryVerifier(recoveryVerifier)
+                || !CryptoPackage.isValid(authVerifier, passwordSalt, wrappedMasterKey, wrappedMasterKeyIv)) {
+            throw ApiException.badRequest("Invalid recovery request");
+        }
+
+        Optional<AppUser> user = userRepository.findByEmail(email);
+        String storedHash = user.map(AppUser::getRecoveryVerifierHash)
+                .filter(hash -> hash != null && !hash.isBlank())
+                .orElse(dummyVerifierHash);
+        boolean matches = CryptoPackage.verifierMatches(recoveryVerifier, storedHash);
+
+        if (!matches || user.isEmpty()) {
+            throw ApiException.unauthorized("Invalid email or recovery key");
+        }
+
+        AppUser account = user.get();
+        account.replaceCryptoMaterial(
+                CryptoPackage.hashVerifier(authVerifier),
+                passwordSalt,
+                wrappedMasterKey,
+                wrappedMasterKeyIv);
+        return userRepository.save(account);
     }
 
     @Transactional
@@ -121,12 +177,31 @@ public class AuthService {
         }
 
         user.replaceCryptoMaterial(
-                CryptoPackage.hashAuthVerifier(authVerifier),
+                CryptoPackage.hashVerifier(authVerifier),
                 passwordSalt,
                 wrappedMasterKey,
                 wrappedMasterKeyIv);
 
         return userRepository.save(user);
+    }
+
+    @Transactional
+    public void deleteAccount(Long userId, String currentAuthVerifier) {
+        AppUser user = userRepository.findById(userId)
+                .orElseThrow(() -> ApiException.unauthorized("Session expired"));
+
+        if (currentAuthVerifier == null
+                || currentAuthVerifier.isBlank()
+                || !CryptoPackage.verifierMatches(currentAuthVerifier, user.getAuthVerifierHash())) {
+            throw ApiException.badRequest("Current password is incorrect");
+        }
+
+        // Files first: if the disk cannot be cleaned, keep the account so the
+        // user can retry instead of leaving unreachable blobs behind.
+        storageService.deleteUserData(userId);
+        userRepository.delete(user);
+        userRepository.flush();
+        planStateFile.refreshIfNeeded();
     }
 
     @Transactional(readOnly = true)

@@ -114,7 +114,9 @@ public class RequestLogFilter extends OncePerRequestFilter {
 
         if (path.equals("/api/auth/register")) return "register";
         if (path.equals("/api/auth/login")) return "login";
+        if (path.equals("/api/auth/recover")) return "recover";
         if (path.equals("/api/auth/logout")) return "logout";
+        if (path.equals("/api/auth/account/delete")) return "delete-account";
         if (path.equals("/api/auth/password")) return "password";
         if (path.equals("/api/auth/settings")) return "settings";
         if (path.equals("/api/auth/plan")) return "plan";

@@ -104,6 +104,10 @@
     };
   }
 
+  async function deriveRecoveryVerifier(masterKey) {
+    return hkdf(masterKey, 'SkyVault Recovery Verifier v1');
+  }
+
   async function wrapMasterKey(kek, masterKey) {
     requireWebCrypto();
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -260,6 +264,7 @@
   window.SkyVaultCrypto = {
     ensureSodium: ensureSodium,
     deriveKeys: deriveKeys,
+    deriveRecoveryVerifier: deriveRecoveryVerifier,
     wrapMasterKey: wrapMasterKey,
     unwrapMasterKey: unwrapMasterKey,
     storeMasterKey: storeMasterKey,

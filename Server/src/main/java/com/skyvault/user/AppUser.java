@@ -25,6 +25,9 @@ public class AppUser {
     @Column(name = "auth_verifier_hash", nullable = false, length = 64)
     private String authVerifierHash;
 
+    @Column(name = "recovery_verifier_hash", length = 64)
+    private String recoveryVerifierHash;
+
     @Column(name = "password_salt", nullable = false, length = 64)
     private String passwordSalt;
 
@@ -63,12 +66,14 @@ public class AppUser {
 
     public AppUser(String email,
                    String authVerifierHash,
+                   String recoveryVerifierHash,
                    String passwordSalt,
                    String wrappedMasterKey,
                    String wrappedMasterKeyIv,
                    long quotaBytes) {
         this.email = email;
         this.authVerifierHash = authVerifierHash;
+        this.recoveryVerifierHash = recoveryVerifierHash;
         this.passwordSalt = passwordSalt;
         this.wrappedMasterKey = wrappedMasterKey;
         this.wrappedMasterKeyIv = wrappedMasterKeyIv;
@@ -117,6 +122,18 @@ public class AppUser {
 
     public String getAuthVerifierHash() {
         return authVerifierHash;
+    }
+
+    public String getRecoveryVerifierHash() {
+        return recoveryVerifierHash;
+    }
+
+    public void setRecoveryVerifierHash(String recoveryVerifierHash) {
+        this.recoveryVerifierHash = recoveryVerifierHash;
+    }
+
+    public boolean hasRecoveryVerifier() {
+        return recoveryVerifierHash != null && !recoveryVerifierHash.isBlank();
     }
 
     public String getPasswordSalt() {

@@ -459,7 +459,7 @@
     $('authSubmit').textContent = state.authMode === 'register' ? 'Create account' : 'Sign in';
     $('authPassword').autocomplete = state.authMode === 'register' ? 'new-password' : 'current-password';
     $('authHint').hidden = state.authMode !== 'register';
-    $('authHint').textContent = 'Your password protects the entire drive. Minimum 10 characters. It cannot be recovered, so save your recovery card.';
+    $('authHint').textContent = 'Your password protects the entire drive. Minimum 10 characters. Keep your recovery card offline: it lets you set a new password if you forget this one.';
     hideAuthMessage();
   }
 
@@ -511,6 +511,7 @@
     const masterKey = crypto.getRandomValues(new Uint8Array(32));
     const keys = await C.deriveKeys(password, salt);
     const wrapped = await C.wrapMasterKey(keys.kek, masterKey);
+    const recoveryVerifier = await C.deriveRecoveryVerifier(masterKey);
 
     setBusy(true, 'Creating account...');
     await api('/api/auth/register', {
@@ -519,6 +520,7 @@
       body: JSON.stringify({
         email: email,
         authVerifier: C.toBase64(keys.authVerifier),
+        recoveryVerifier: C.toBase64(recoveryVerifier),
         passwordSalt: C.toBase64(salt),
         wrappedMasterKey: C.toBase64(wrapped.ciphertext),
         wrappedMasterKeyIv: C.toBase64(wrapped.iv)
@@ -535,13 +537,6 @@
     const material = await api('/api/auth/crypto?email=' + encodeURIComponent(email), {}, { allow401: true });
     const keys = await C.deriveKeys(password, C.fromBase64(material.passwordSalt));
 
-    setBusy(true, 'Signing in...');
-    await api('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email, authVerifier: C.toBase64(keys.authVerifier) })
-    }, { allow401: true });
-
     let masterKey;
     try {
       masterKey = await C.unwrapMasterKey(
@@ -550,8 +545,21 @@
         C.fromBase64(material.wrappedMasterKeyIv)
       );
     } catch (error) {
-      throw new Error('Could not decrypt the master key. Try again.');
+      throw new Error('Invalid email or password.');
     }
+
+    const recoveryVerifier = await C.deriveRecoveryVerifier(masterKey);
+
+    setBusy(true, 'Signing in...');
+    await api('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email,
+        authVerifier: C.toBase64(keys.authVerifier),
+        recoveryVerifier: C.toBase64(recoveryVerifier)
+      })
+    }, { allow401: true });
 
     C.storeMasterKey(email, masterKey);
     const profile = await api('/api/auth/me');
@@ -633,6 +641,7 @@
     clearThumbnailCache();
     C.clearMasterKey();
     closePasswordChange();
+    closeDeleteAccount();
     closeContextMenu();
     $('appScreen').hidden = true;
     $('authScreen').hidden = false;
@@ -666,7 +675,8 @@
     confirmAction(
       'Recovery card',
       'Your account has been created. Download your recovery card and keep it offline. '
-        + 'Without your password and this card, you cannot recover your data. SkyVault cannot recreate it.',
+        + 'If you forget your password, the card lets you set a new one. Without the card, '
+        + 'SkyVault cannot recover your data.',
       'Download card'
     ).then((accepted) => {
       if (!accepted) {
@@ -786,6 +796,202 @@
       showPasswordMessage(error.message || 'Could not change the password.');
       submit.disabled = false;
       submit.textContent = 'Change password';
+    }
+  }
+
+  function showRecoveryMessage(message) {
+    const element = $('recoveryMessage');
+    element.textContent = message;
+    element.hidden = false;
+  }
+
+  function closeRecovery() {
+    $('recoveryModal').hidden = true;
+    $('recoveryForm').reset();
+    $('recoveryMessage').hidden = true;
+    $('recoverySubmit').disabled = false;
+    $('recoverySubmit').textContent = 'Change password';
+  }
+
+  function openRecovery() {
+    $('recoveryForm').reset();
+    $('recoveryMessage').hidden = true;
+    $('recoverySubmit').disabled = false;
+    $('recoverySubmit').textContent = 'Change password';
+    const email = $('authEmail').value.trim();
+    if (email) {
+      $('recoveryEmail').value = email;
+    }
+    $('recoveryModal').hidden = false;
+    setTimeout(() => {
+      const target = email ? $('recoveryKey') : $('recoveryEmail');
+      target.focus();
+    }, 0);
+  }
+
+  function masterKeyFromCard(value) {
+    const compact = value.replace(/\s+/g, '');
+    const match = compact.match(/[A-Za-z0-9+/]{43}=/);
+    if (!match) {
+      throw new Error('Paste the master key from your recovery card.');
+    }
+
+    let bytes;
+    try {
+      bytes = C.fromBase64(match[0]);
+    } catch (error) {
+      throw new Error('The master key is not valid base64.');
+    }
+    if (bytes.length !== 32) {
+      throw new Error('The master key must be 32 bytes.');
+    }
+    return bytes;
+  }
+
+  async function handleRecovery(event) {
+    event.preventDefault();
+    $('recoveryMessage').hidden = true;
+
+    const email = $('recoveryEmail').value.trim().toLowerCase();
+    const next = $('recoveryPassword').value;
+    const confirmation = $('recoveryConfirm').value;
+
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      showRecoveryMessage('Enter a valid email address.');
+      return;
+    }
+
+    let masterKey;
+    try {
+      masterKey = masterKeyFromCard($('recoveryKey').value);
+    } catch (error) {
+      showRecoveryMessage(error.message);
+      return;
+    }
+
+    if (next.length < 10) {
+      showRecoveryMessage('The new password must be at least 10 characters long.');
+      return;
+    }
+    if (next !== confirmation) {
+      showRecoveryMessage('The new passwords do not match.');
+      return;
+    }
+
+    const submit = $('recoverySubmit');
+    submit.disabled = true;
+    submit.textContent = 'Deriving key...';
+
+    try {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const keys = await C.deriveKeys(next, salt);
+      const wrapped = await C.wrapMasterKey(keys.kek, masterKey);
+      const recoveryVerifier = await C.deriveRecoveryVerifier(masterKey);
+      submit.textContent = 'Changing password...';
+
+      await api('/api/auth/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email,
+          recoveryVerifier: C.toBase64(recoveryVerifier),
+          authVerifier: C.toBase64(keys.authVerifier),
+          passwordSalt: C.toBase64(salt),
+          wrappedMasterKey: C.toBase64(wrapped.ciphertext),
+          wrappedMasterKeyIv: C.toBase64(wrapped.iv)
+        })
+      }, { allow401: true });
+
+      C.storeMasterKey(email, masterKey);
+      closeRecovery();
+      window.location.reload();
+    } catch (error) {
+      const message = error.message || 'Could not change the password.';
+      showRecoveryMessage(error.status === 401
+        ? message + ' If this account was created before recovery support, sign in once with your current password first.'
+        : message);
+      submit.disabled = false;
+      submit.textContent = 'Change password';
+    }
+  }
+
+  function showDeleteAccountMessage(message) {
+    const element = $('deleteAccountMessage');
+    element.textContent = message;
+    element.hidden = false;
+  }
+
+  function closeDeleteAccount() {
+    $('deleteAccountModal').hidden = true;
+    $('deleteAccountForm').reset();
+    $('deleteAccountMessage').hidden = true;
+    $('deleteAccountSubmit').disabled = false;
+    $('deleteAccountSubmit').textContent = 'Delete forever';
+  }
+
+  function openDeleteAccount() {
+    $('accountPanel').hidden = true;
+    $('deleteAccountForm').reset();
+    $('deleteAccountMessage').hidden = true;
+    $('deleteAccountSubmit').disabled = false;
+    $('deleteAccountSubmit').textContent = 'Delete forever';
+    $('deleteAccountEmail').value = '';
+    $('deleteAccountEmail').placeholder = state.user ? state.user.email : '';
+    $('deleteAccountModal').hidden = false;
+    setTimeout(() => $('deleteAccountEmail').focus(), 0);
+  }
+
+  async function handleDeleteAccount(event) {
+    event.preventDefault();
+    $('deleteAccountMessage').hidden = true;
+
+    const email = state.user ? state.user.email : '';
+    const typed = $('deleteAccountEmail').value.trim().toLowerCase();
+    const password = $('deleteAccountPassword').value;
+
+    if (!email) {
+      showDeleteAccountMessage('Sign in again to delete the account.');
+      return;
+    }
+    if (typed !== email.toLowerCase()) {
+      showDeleteAccountMessage('Type the account email exactly to confirm.');
+      return;
+    }
+    if (!password) {
+      showDeleteAccountMessage('Enter your current master password.');
+      return;
+    }
+    if (!$('deleteAccountConfirm').checked) {
+      showDeleteAccountMessage('Confirm that you understand the files will be deleted.');
+      return;
+    }
+
+    const submit = $('deleteAccountSubmit');
+    submit.disabled = true;
+    submit.textContent = 'Checking password...';
+
+    try {
+      const material = await api('/api/auth/crypto?email=' + encodeURIComponent(email));
+      const keys = await C.deriveKeys(password, C.fromBase64(material.passwordSalt));
+      submit.textContent = 'Deleting...';
+
+      await api('/api/auth/account/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentAuthVerifier: C.toBase64(keys.authVerifier) })
+      });
+
+      closeDeleteAccount();
+      resetToAuth();
+      setAuthMode('register');
+      $('authEmail').value = email;
+      $('authPassword').value = '';
+      showAuthMessage('Account and all encrypted files deleted. Register again with the same email to get a new master key and a new recovery card.');
+      setTimeout(() => $('authPassword').focus(), 0);
+    } catch (error) {
+      showDeleteAccountMessage(error.message || 'Could not delete the account.');
+      submit.disabled = false;
+      submit.textContent = 'Delete forever';
     }
   }
 
@@ -3227,6 +3433,14 @@
       closePasswordChange();
       return;
     }
+    if (id === 'recoveryModal') {
+      closeRecovery();
+      return;
+    }
+    if (id === 'deleteAccountModal') {
+      closeDeleteAccount();
+      return;
+    }
     $(id).hidden = true;
   }
 
@@ -3293,6 +3507,8 @@
       button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
     });
     $('authForm').addEventListener('submit', handleAuthSubmit);
+    $('recoveryLink').addEventListener('click', openRecovery);
+    $('recoveryForm').addEventListener('submit', handleRecovery);
 
     document.querySelectorAll('.nav-item[data-view]').forEach((button) => {
       button.addEventListener('click', () => setView(button.dataset.view, button.dataset.path || ''));
@@ -3385,6 +3601,8 @@
     $('changePasswordButton').addEventListener('click', openPasswordChange);
     $('passwordForm').addEventListener('submit', handlePasswordChange);
     $('recoveryButton').addEventListener('click', downloadRecovery);
+    $('deleteAccountButton').addEventListener('click', openDeleteAccount);
+    $('deleteAccountForm').addEventListener('submit', handleDeleteAccount);
 
     $('uploadClose').addEventListener('click', () => {
       $('uploadToast').hidden = true;
@@ -3651,6 +3869,12 @@
         }
         if (!$('passwordModal').hidden) {
           closePasswordChange();
+        }
+        if (!$('recoveryModal').hidden) {
+          closeRecovery();
+        }
+        if (!$('deleteAccountModal').hidden) {
+          closeDeleteAccount();
         }
         return;
       }

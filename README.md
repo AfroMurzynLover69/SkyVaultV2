@@ -129,9 +129,9 @@ sequenceDiagram
     Note over U,C: Sign up
     U->>C: password + salt
     C->>C: Argon2id -> HKDF-SHA256
-    C-->>U: authVerifier + wrapped master key
+    C-->>U: authVerifier + wrapped master key + recoveryVerifier
     U->>S: POST /api/auth/register
-    S->>DB: INSERT app_user
+    S->>DB: INSERT app_user (hashes only)
 
     Note over U,C: Upload
     U->>C: file content
@@ -359,11 +359,12 @@ password
   -> HKDF-SHA256("AuthVerifier")        = authVerifier 32 B   -> the server receives SHA-256
   -> HKDF-SHA256("MasterKey KEK")       = KEK 32 B
 masterKey 32 B (random)
+  -> HKDF-SHA256("Recovery Verifier v1") = recoveryVerifier 32 B -> the server receives SHA-256
   -> AES-GCM(KEK, iv 12 B)              = wrappedMasterKey 48 B -> the server stores it unchanged
 ```
 
-The server stores only: the verifier hash, the salt, the wrapped master key and
-encrypted paths. There is **no** column with a plaintext file name.
+The server stores only: the auth and recovery verifier hashes, the salt, the wrapped
+master key and encrypted paths. There is **no** column with a plaintext file name.
 
 ### Blob format
 
@@ -389,9 +390,11 @@ to the client together with the metadata.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/auth/register` | crypto bundle -> account and session creation |
-| `POST` | `/api/auth/login` | verifier -> session |
+| `POST` | `/api/auth/register` | crypto bundle (including `recoveryVerifier`) -> account and session creation |
+| `POST` | `/api/auth/login` | verifier -> session; an optional `recoveryVerifier` enrolls legacy accounts |
+| `POST` | `/api/auth/recover` | emergency password reset with the email and the verifier from the recovery card |
 | `POST` | `/api/auth/password` | re-wrap the master key with a new password (session required) |
+| `POST` | `/api/auth/account/delete` | permanently delete the account, all files and sessions (session + current verifier required) |
 | `POST` | `/api/auth/settings` | save the encrypted account settings, e.g. the color theme (session required) |
 | `POST` | `/api/auth/plan` | renew or switch the storage plan for 30 days: `free` 5 GB, `plus` 200 GB, `pro` 1 TB (session required) |
 | `POST` | `/api/auth/logout` | end of session |
@@ -420,6 +423,50 @@ The server verifies `currentAuthVerifier`, stores the new salt and wrapped key, 
 all sessions of the account; the browser that made the change receives a fresh cookie.
 The master key itself never changes, so `pathHash` values, encrypted paths and every file
 blob remain valid — nothing is re-encrypted.
+
+### Emergency password reset
+
+The **Forgot your password? Use a recovery card** link on the sign-in screen opens a modal
+that asks for the account email, the master key printed on the recovery card and a new
+password. The client derives `recoveryVerifier` from the master key:
+
+```
+recoveryVerifier = HKDF-SHA256(masterKey, salt="SkyVault HKDF v1",
+                              info="SkyVault Recovery Verifier v1", 32 B)
+```
+
+Registration sends this verifier; the server stores only its SHA-256 hash. `POST
+/api/auth/recover` takes the email, the verifier and a fresh crypto bundle: the new
+password salt, the new auth verifier and the same master key wrapped with a KEK derived
+from the new password. The server compares the verifier, replaces the auth hash and the
+wrapper, revokes every old session and opens a new one. The password and master key never
+leave the browser, and files, encrypted paths and `pathHash` values are untouched.
+
+The UI changes only the password wrapper. If the **master key itself leaked**, resetting
+the password is not enough: anyone holding that key can still decrypt existing blobs.
+Rotating the master key and re-encrypting every file is a separate, not-yet-implemented
+operation. Treat a card that was copied or pasted anywhere as compromised.
+
+Accounts created before recovery support have `recovery_verifier_hash = NULL`. They enroll
+automatically on the first successful password login, because the browser also sends the
+recovery verifier derived from the master key. This cannot be triggered from a stolen
+session: login requires the password-derived auth verifier. Until that first login, an
+old account cannot use the card reset — sign in once with the current password, or delete
+the empty account and register again.
+
+### Deleting an account
+
+`POST /api/auth/account/delete` takes `currentAuthVerifier`, so a stolen session alone cannot
+erase the account. After the password check the server deletes `data/files/u{id}` recursively,
+deletes the account row (the database cascades to `stored_file` and `user_session`), clears the
+cookie and refreshes the plan-state mirror. The email is released immediately.
+
+Deletion is permanent and there is no recovery. Registering the same email again creates a new
+account with a **new master key** and a new recovery card; the old key cannot open the new
+files. Server-side backups made before the deletion may retain encrypted copies until their
+retention period ends, and if the old master key leaked those copies remain readable with it.
+The UI label is **Delete account**, followed by a confirmation email, the current password and
+an explicit checkbox.
 
 ### Files (require a session)
 
@@ -490,7 +537,12 @@ Mechanics:
 - **Names and folders** — rename, move (also by dragging onto a folder),
   folder creation. A folder is moved together with its entire contents.
 - **Account** — the account menu downloads the recovery card and changes the master
-  password. Changing it re-wraps the master key only; files are not re-encrypted.
+  password. Changing it re-wraps the master key only; files are not re-encrypted. The
+  sign-in screen has a **Forgot your password? Use a recovery card** link: enter the email
+  and the master key from the card to set a new password without losing files. The account
+  menu also has **Delete account**: after confirming the email, the current password and a
+  warning checkbox, it wipes the files and account; the sign-up form reopens with the same
+  email and a fresh registration creates a new master key and recovery card.
 - **Trash** — move, restore and permanent delete; empty everything.
 - **Context menu** (right mouse button) — open/preview, download, star, rename,
   move, details, trash; on an empty area — new folder, upload files and a directory, refresh.
@@ -510,9 +562,10 @@ Mechanics:
 
 The master key lives only in the tab's `sessionStorage`: closing the tab forgets the key,
 and opening SkyVault in a new tab asks for the password ("unlock the drive") — the server
-session is still valid, but no one can recreate the key without the password. After registration
-the client downloads a **recovery card** with the master key; without it, losing the password
-means losing the data.
+session is still valid, but no one can recreate the key without the password or the recovery
+card. After registration the client downloads a **recovery card** with the master key; keep
+it offline. With the card, the sign-in screen can set a new password without re-encrypting
+files; without both the password and the card, the data cannot be recovered.
 
 Web Crypto requires a secure context. SkyVault always runs over HTTPS — also on `localhost` —
 so Argon2id, HKDF and AES-GCM work both on the server machine and on another computer in the
@@ -706,6 +759,10 @@ sidecar contain the checksums needed to confirm that the restored dump and plan 
 - `BackupServiceTests` — LZMA2 archive contents, metadata, checksums and the two-copy retention.
 - `ConcurrencyLimiterTests` — whether the concurrency limit is actually not exceeded
   with 200 parallel requests.
+- `CryptoPackageTests` — recovery verifier shape, hashing and matching without storing
+  the secret.
+- `StorageServiceTests` — account deletion removes only that user's blob directory and is
+  safe to repeat.
 
 ## Server concurrency test
 

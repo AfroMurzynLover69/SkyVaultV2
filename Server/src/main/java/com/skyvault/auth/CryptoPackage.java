@@ -9,6 +9,7 @@ import java.util.Base64;
 public final class CryptoPackage {
 
     public static final int AUTH_VERIFIER_BYTES = 32;
+    public static final int RECOVERY_VERIFIER_BYTES = 32;
     public static final int PASSWORD_SALT_BYTES = 16;
     public static final int MIN_WRAPPED_KEY_BYTES = 48;
     public static final int IV_BYTES = 12;
@@ -28,8 +29,17 @@ public final class CryptoPackage {
                 && hasBytes(wrappedMasterKeyIv, IV_BYTES);
     }
 
-    public static String hashAuthVerifier(String authVerifier) {
-        return Base64.getEncoder().encodeToString(sha256(decodeBase64(authVerifier)));
+    public static boolean isValidRecoveryVerifier(String recoveryVerifier) {
+        return hasBytes(recoveryVerifier, RECOVERY_VERIFIER_BYTES);
+    }
+
+    /**
+     * Hashes a client-side verifier before it is stored. The auth verifier and
+     * the recovery verifier have the same shape: 32 random-looking bytes that
+     * prove knowledge of a secret without revealing it.
+     */
+    public static String hashVerifier(String verifier) {
+        return Base64.getEncoder().encodeToString(sha256(decodeBase64(verifier)));
     }
 
     public static boolean verifierMatches(String authVerifier, String storedHash) {

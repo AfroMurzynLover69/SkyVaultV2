@@ -99,6 +99,12 @@
           <button id="authSubmit" type="submit" class="primary">Sign in</button>
         </div>
 
+        <p class="auth-recovery">
+          <button type="button" id="recoveryLink" class="auth-link">
+            Forgot your password? Use a recovery card
+          </button>
+        </p>
+
         <p class="auth-note">
           The password is never sent. The server only receives a verifier
           and the master key wrapped with a key it does not know.
@@ -193,6 +199,9 @@
         </button>
         <button class="secondary" id="recoveryButton" type="button">
           <svg class="icon"><use href="#i-lock"></use></svg><span>Recovery card</span>
+        </button>
+        <button class="secondary danger" id="deleteAccountButton" type="button">
+          <svg class="icon"><use href="#i-trash"></use></svg><span>Delete account</span>
         </button>
         <button class="secondary" id="logoutButton" type="button">
           <svg class="icon"><use href="#i-logout"></use></svg><span>Sign out</span>
@@ -352,6 +361,73 @@
     <div class="modal-actions">
       <button type="button" data-close-modal>Cancel</button>
       <button type="submit" id="passwordSubmit" class="primary">Change password</button>
+    </div>
+  </form>
+</div>
+
+<div id="recoveryModal" class="modal" hidden>
+  <form id="recoveryForm" class="modal-panel password-panel" role="dialog" aria-modal="true"
+        aria-labelledby="recoveryTitle">
+    <h2 id="recoveryTitle">Recover access</h2>
+    <p class="password-intro">Enter the email and master key from your recovery card, then choose
+       a new master password. Your files are not re-encrypted: the new password wraps the same
+       master key.</p>
+    <p id="recoveryMessage" class="password-message" hidden></p>
+
+    <label for="recoveryEmail">Email address</label>
+    <input id="recoveryEmail" type="email" maxlength="254" autocomplete="username"
+           spellcheck="false" required>
+
+    <label for="recoveryKey">Master key from the card (base64)</label>
+    <input id="recoveryKey" type="password" autocomplete="off" spellcheck="false" required>
+
+    <label for="recoveryPassword">New master password</label>
+    <input id="recoveryPassword" type="password" autocomplete="new-password" minlength="10" required>
+
+    <label for="recoveryConfirm">Repeat new password</label>
+    <input id="recoveryConfirm" type="password" autocomplete="new-password" minlength="10" required>
+
+    <p class="password-hint">Minimum 10 characters. The new password and the key never leave
+       this browser. Other devices will be signed out.</p>
+    <p class="password-hint">If the master key itself leaked, changing the password is not
+       enough: anyone with that key can still decrypt the old files. Re-encryption is a
+       separate operation.</p>
+
+    <div class="modal-actions">
+      <button type="button" data-close-modal>Cancel</button>
+      <button type="submit" id="recoverySubmit" class="primary">Change password</button>
+    </div>
+  </form>
+</div>
+
+<div id="deleteAccountModal" class="modal" hidden>
+  <form id="deleteAccountForm" class="modal-panel password-panel" role="dialog" aria-modal="true"
+        aria-labelledby="deleteAccountTitle">
+    <h2 id="deleteAccountTitle">Delete account permanently</h2>
+    <p class="password-intro">This removes the account, every encrypted file and folder, the trash,
+       the encrypted settings and all sessions. It cannot be undone. The email is released, so you
+       can register again and receive a new master key and a new recovery card.</p>
+    <p id="deleteAccountMessage" class="password-message" hidden></p>
+
+    <label for="deleteAccountEmail">Type your email to confirm</label>
+    <input id="deleteAccountEmail" type="email" maxlength="254" autocomplete="username"
+           spellcheck="false" required>
+
+    <label for="deleteAccountPassword">Current master password</label>
+    <input id="deleteAccountPassword" type="password" autocomplete="current-password" required>
+
+    <label class="danger-check" for="deleteAccountConfirm">
+      <input id="deleteAccountConfirm" type="checkbox" required>
+      <span>I understand that all files will be deleted permanently.</span>
+    </label>
+
+    <p class="password-hint">The password is checked locally; the server receives only the
+       password-derived verifier. Server-side backups created before deletion may keep encrypted
+       copies until their retention period ends, but they cannot be opened with the new key.</p>
+
+    <div class="modal-actions">
+      <button type="button" data-close-modal>Cancel</button>
+      <button type="submit" id="deleteAccountSubmit" class="danger">Delete forever</button>
     </div>
   </form>
 </div>

@@ -390,6 +390,24 @@ button { cursor: pointer; }
 .auth-actions { margin-top: 6px; }
 .auth-actions .primary { width: 100%; padding: 13px; }
 
+.auth-recovery {
+  margin: 14px 0 0;
+  text-align: center;
+}
+
+.auth-link {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 4px;
+  font-size: .8rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-link:hover { color: var(--accent-hover); }
+
 .auth-note {
   margin-top: 22px;
   font-size: .76rem;
@@ -641,6 +659,8 @@ button { cursor: pointer; }
 .account-plan.is-expired { color: #b3261e; font-weight: 600; }
 .account-usage { margin: 8px 0 16px; font-size: .76rem; color: var(--muted); }
 .account-menu .secondary { width: 100%; }
+.account-menu .secondary.danger { color: #b3261e; border-color: #e2b7b3; }
+.account-menu .secondary.danger:hover { background: #fbeceb; }
 
 .settings-page { padding-bottom: 28px; }
 
@@ -1429,6 +1449,8 @@ button { cursor: pointer; }
 .modal-panel {
   width: 100%;
   max-width: 400px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   background: var(--paper);
   border-radius: 14px;
   padding: 24px;
@@ -1468,6 +1490,33 @@ button { cursor: pointer; }
 }
 
 .modal-actions button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.modal-actions button.danger {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #fff;
+}
+
+.modal-actions button.danger:hover { background: #8f1d17; border-color: #8f1d17; }
+
+.password-panel label.danger-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: .82rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.password-panel .danger-check input {
+  width: auto;
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+}
 
 .password-panel { max-width: 430px; }
 

@@ -5,9 +5,12 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -51,6 +54,41 @@ public class StorageService {
         try {
             Files.deleteIfExists(userDirectory(userId).resolve(blobId));
         } catch (IOException exception) {
+        }
+    }
+
+    /**
+     * Removes the entire blob directory of an account. Used when the account
+     * itself is deleted; the caller is responsible for deleting the database
+     * rows and for treating a failure as a failed account deletion.
+     */
+    public void deleteUserData(Long userId) {
+        Path directory = userDirectory(userId);
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try {
+            Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes)
+                        throws IOException {
+                    Files.deleteIfExists(file);
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path visited, IOException failure)
+                        throws IOException {
+                    if (failure != null) {
+                        throw failure;
+                    }
+                    Files.deleteIfExists(visited);
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Could not delete the encrypted files of user " + userId, exception);
         }
     }
 

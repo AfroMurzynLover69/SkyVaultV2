@@ -39,6 +39,7 @@ public class AuthController {
         AppUser user = authService.register(
                 request.email(),
                 request.authVerifier(),
+                request.recoveryVerifier(),
                 request.passwordSalt(),
                 request.wrappedMasterKey(),
                 request.wrappedMasterKeyIv());
@@ -51,9 +52,41 @@ public class AuthController {
                                                  HttpServletRequest httpRequest,
                                                  HttpServletResponse response) {
         httpRequest.setAttribute(RequestLogFilter.USER_LABEL_ATTRIBUTE, request.email());
-        AppUser user = authService.authenticate(request.email(), request.authVerifier())
+        AppUser user = authService.authenticate(
+                        request.email(),
+                        request.authVerifier(),
+                        request.recoveryVerifier())
                 .orElseThrow(() -> ApiException.unauthorized("Invalid email or password"));
         return withSession(user, response);
+    }
+
+    @PostMapping("/recover")
+    public ResponseEntity<SessionResponse> recover(@Valid @RequestBody RecoverRequest request,
+                                                   HttpServletRequest httpRequest,
+                                                   HttpServletResponse response) {
+        httpRequest.setAttribute(RequestLogFilter.USER_LABEL_ATTRIBUTE, request.email());
+        AppUser user = authService.recover(
+                request.email(),
+                request.recoveryVerifier(),
+                request.authVerifier(),
+                request.passwordSalt(),
+                request.wrappedMasterKey(),
+                request.wrappedMasterKeyIv());
+
+        sessionService.deleteAllForUser(user.getId());
+        return withSession(user, response);
+    }
+
+    @PostMapping("/account/delete")
+    public ResponseEntity<Void> deleteAccount(@Valid @RequestBody DeleteAccountRequest request,
+                                              HttpServletRequest httpRequest,
+                                              HttpServletResponse response) {
+        Long userId = currentUserId(httpRequest);
+        authService.deleteAccount(userId, request.currentAuthVerifier());
+
+        ResponseCookie cleared = sessionService.destroySession(httpRequest);
+        response.addHeader(HttpHeaders.SET_COOKIE, cleared.toString());
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/password")
@@ -144,6 +177,7 @@ public class AuthController {
     public record RegisterRequest(
             @NotBlank @Size(max = 254) String email,
             @NotBlank String authVerifier,
+            @NotBlank String recoveryVerifier,
             @NotBlank String passwordSalt,
             @NotBlank String wrappedMasterKey,
             @NotBlank String wrappedMasterKeyIv) {
@@ -151,7 +185,21 @@ public class AuthController {
 
     public record LoginRequest(
             @NotBlank @Size(max = 254) String email,
-            @NotBlank String authVerifier) {
+            @NotBlank String authVerifier,
+            @Size(max = 64) String recoveryVerifier) {
+    }
+
+    public record RecoverRequest(
+            @NotBlank @Size(max = 254) String email,
+            @NotBlank String recoveryVerifier,
+            @NotBlank String authVerifier,
+            @NotBlank String passwordSalt,
+            @NotBlank String wrappedMasterKey,
+            @NotBlank String wrappedMasterKeyIv) {
+    }
+
+    public record DeleteAccountRequest(
+            @NotBlank String currentAuthVerifier) {
     }
 
     public record ChangePasswordRequest(

@@ -14,6 +14,7 @@ class AppUserPlanTests {
         return new AppUser(
                 "plan-test@example.com",
                 "verifier-hash",
+                null,
                 "salt",
                 "wrapped-key",
                 "wrapped-iv",

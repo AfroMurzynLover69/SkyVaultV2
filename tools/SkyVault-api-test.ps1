@@ -91,6 +91,7 @@ Write-Host ("  " + ($statusJson | ConvertTo-Json -Compress))
 Write-Host "`n2. Registration (crypto bundle)"
 $email = "test-$(New-Hex 4)@example.com"
 $authVerifier = New-Base64 32
+$recoveryVerifier = New-Base64 32
 $passwordSalt = New-Base64 16
 $wrappedKey = New-Base64 48
 $wrappedIv = New-Base64 12
@@ -98,6 +99,7 @@ $wrappedIv = New-Base64 12
 $registerBody = @{
     email                 = $email
     authVerifier          = $authVerifier
+    recoveryVerifier      = $recoveryVerifier
     passwordSalt          = $passwordSalt
     wrappedMasterKey      = $wrappedKey
     wrappedMasterKeyIv    = $wrappedIv
@@ -151,7 +153,7 @@ Assert-Equal 'unknown plan rejected' $unknownPlan.Status 400
 $freePlan = Invoke-Api -Method 'POST' -Path '/api/auth/plan' -Json (@{ plan = 'free' } | ConvertTo-Json)
 Assert-Equal 'plan switched back to free' $freePlan.Status 204
 
-$planFile = Join-Path $PSScriptRoot 'data\plans.json'
+$planFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'data\plans.json'
 Assert-True 'plain-text plan state file exists' (Test-Path $planFile)
 if (Test-Path $planFile) {
     $planState = (Get-Content $planFile -Raw) | ConvertFrom-Json
@@ -201,12 +203,23 @@ Write-Host "`n4. Crypto bundle validation"
 $badBody = @{
     email              = "bad-$(New-Hex 4)@example.com"
     authVerifier       = New-Base64 16
+    recoveryVerifier   = $recoveryVerifier
     passwordSalt       = $passwordSalt
     wrappedMasterKey   = $wrappedKey
     wrappedMasterKeyIv = $wrappedIv
 } | ConvertTo-Json
 $bad = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $badBody
 Assert-Equal 'bad verifier rejected' $bad.Status 400
+
+$noRecoveryBody = @{
+    email              = "bad-$(New-Hex 4)@example.com"
+    authVerifier       = New-Base64 32
+    passwordSalt       = $passwordSalt
+    wrappedMasterKey   = $wrappedKey
+    wrappedMasterKeyIv = $wrappedIv
+} | ConvertTo-Json
+$noRecovery = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $noRecoveryBody
+Assert-Equal 'missing recovery verifier rejected' $noRecovery.Status 400
 
 Write-Host "`n5. Crypto material"
 $crypto = Invoke-Api -Method 'GET' -Path "/api/auth/crypto?email=$email"
@@ -306,7 +319,11 @@ $oldLoginBody = @{ email = $email; authVerifier = $authVerifier } | ConvertTo-Js
 $oldLogin = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $oldLoginBody
 Assert-Equal 'old password rejected' $oldLogin.Status 401
 
-$newLoginBody = @{ email = $email; authVerifier = $newVerifier } | ConvertTo-Json
+$newLoginBody = @{
+    email            = $email
+    authVerifier     = $newVerifier
+    recoveryVerifier = $recoveryVerifier
+} | ConvertTo-Json
 $newLogin = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $newLoginBody
 Assert-Equal 'new password accepted' $newLogin.Status 200
 
@@ -317,6 +334,124 @@ $afterLogout = Invoke-Api -Method 'GET' -Path '/api/files'
 Assert-Equal 'no access without a session' $afterLogout.Status 401
 $anonymousChange = Invoke-Api -Method 'POST' -Path '/api/auth/password' -Json $changeBody
 Assert-Equal 'password change requires a session' $anonymousChange.Status 401
+
+Write-Host "`n12. Emergency password recovery"
+$recoveryNewVerifier = New-Base64 32
+$recoveryNewSalt = New-Base64 16
+$recoveryNewWrappedKey = New-Base64 48
+$recoveryNewWrappedIv = New-Base64 12
+
+$wrongRecoveryBody = @{
+    email              = $email
+    recoveryVerifier   = New-Base64 32
+    authVerifier       = $recoveryNewVerifier
+    passwordSalt       = $recoveryNewSalt
+    wrappedMasterKey   = $recoveryNewWrappedKey
+    wrappedMasterKeyIv = $recoveryNewWrappedIv
+} | ConvertTo-Json
+$wrongRecovery = Invoke-Api -Method 'POST' -Path '/api/auth/recover' -Json $wrongRecoveryBody
+Assert-Equal 'wrong recovery key rejected' $wrongRecovery.Status 401
+
+$recoverBody = @{
+    email              = $email
+    recoveryVerifier   = $recoveryVerifier
+    authVerifier       = $recoveryNewVerifier
+    passwordSalt       = $recoveryNewSalt
+    wrappedMasterKey   = $recoveryNewWrappedKey
+    wrappedMasterKeyIv = $recoveryNewWrappedIv
+} | ConvertTo-Json
+$recover = Invoke-Api -Method 'POST' -Path '/api/auth/recover' -Json $recoverBody
+Assert-Equal 'HTTP' $recover.Status 200
+
+$meAfterRecovery = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+Assert-Equal 'recovery opens a session' $meAfterRecovery.Status 200
+
+$logoutAfterRecovery = Invoke-Api -Method 'POST' -Path '/api/auth/logout'
+Assert-Equal 'logout after recovery' $logoutAfterRecovery.Status 204
+
+$recoveredCrypto = Invoke-Api -Method 'GET' -Path "/api/auth/crypto?email=$email"
+$recoveredCryptoJson = $recoveredCrypto.Body | ConvertFrom-Json
+Assert-Equal 'recovery stores a new salt' $recoveredCryptoJson.passwordSalt $recoveryNewSalt
+Assert-Equal 'recovery stores a new wrapped key' $recoveredCryptoJson.wrappedMasterKey $recoveryNewWrappedKey
+
+$passwordBeforeRecovery = @{ email = $email; authVerifier = $newVerifier } | ConvertTo-Json
+$loginBeforeRecovery = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $passwordBeforeRecovery
+Assert-Equal 'password from before recovery rejected' $loginBeforeRecovery.Status 401
+
+$passwordAfterRecovery = @{ email = $email; authVerifier = $recoveryNewVerifier } | ConvertTo-Json
+$loginAfterRecovery = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $passwordAfterRecovery
+Assert-Equal 'password from recovery accepted' $loginAfterRecovery.Status 200
+
+$logoutFinal = Invoke-Api -Method 'POST' -Path '/api/auth/logout'
+Assert-Equal 'logout' $logoutFinal.Status 204
+
+Write-Host "`n13. Delete account and start over"
+$startOverLoginBody = @{ email = $email; authVerifier = $recoveryNewVerifier } | ConvertTo-Json
+$startOverLogin = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $startOverLoginBody
+Assert-Equal 'sign in before deletion' $startOverLogin.Status 200
+$startOverUserId = ($startOverLogin.Body | ConvertFrom-Json).userId
+
+$orphanBlob = New-RandomBytes 1024
+[System.IO.File]::WriteAllBytes($BlobFile, $orphanBlob)
+$orphanHash = New-Hex 32
+$orphanUpload = Invoke-Api -Method 'POST' -Path '/api/files' -Form @(
+    '-F', "pathHash=$orphanHash",
+    '-F', "encryptedVirtualPath=$(New-Base64 96)",
+    '-F', "virtualPathIv=$(New-Base64 12)",
+    '-F', 'sizeBytes=1024',
+    '-F', "blob=@$BlobFile;type=application/octet-stream"
+)
+Assert-Equal 'file uploaded before deletion' $orphanUpload.Status 200
+$userBlobDirectory = Join-Path (Split-Path $PSScriptRoot -Parent) "data\files\u$startOverUserId"
+Assert-True 'encrypted blob exists before deletion' (Test-Path $userBlobDirectory)
+
+$wrongDeleteBody = @{ currentAuthVerifier = New-Base64 32 } | ConvertTo-Json
+$wrongDelete = Invoke-Api -Method 'POST' -Path '/api/auth/account/delete' -Json $wrongDeleteBody
+Assert-Equal 'wrong password does not delete the account' $wrongDelete.Status 400
+$meAfterWrongDelete = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+Assert-Equal 'account still exists after a rejected deletion' $meAfterWrongDelete.Status 200
+
+$deleteBody = @{ currentAuthVerifier = $recoveryNewVerifier } | ConvertTo-Json
+$delete = Invoke-Api -Method 'POST' -Path '/api/auth/account/delete' -Json $deleteBody
+Assert-Equal 'account deleted' $delete.Status 204
+Assert-True 'encrypted blobs removed with the account' (-not (Test-Path $userBlobDirectory))
+if (Test-Path $psql) {
+    $orphanRows = & $psql -h 127.0.0.1 -U skyvault -d skyvault -t -A -c "SELECT count(*) FROM stored_file WHERE user_id = $startOverUserId;"
+    Assert-Equal 'file rows removed with the account' $orphanRows.Trim() 0
+}
+
+$afterDeleteMe = Invoke-Api -Method 'GET' -Path '/api/auth/me'
+Assert-Equal 'session after deletion rejected' $afterDeleteMe.Status 401
+$afterDeleteLogin = Invoke-Api -Method 'POST' -Path '/api/auth/login' -Json $startOverLoginBody
+Assert-Equal 'deleted account cannot sign in' $afterDeleteLogin.Status 401
+
+$freshVerifier = New-Base64 32
+$freshRecoveryVerifier = New-Base64 32
+$freshSalt = New-Base64 16
+$freshWrappedKey = New-Base64 48
+$freshWrappedIv = New-Base64 12
+$freshRegisterBody = @{
+    email              = $email
+    authVerifier       = $freshVerifier
+    recoveryVerifier   = $freshRecoveryVerifier
+    passwordSalt       = $freshSalt
+    wrappedMasterKey   = $freshWrappedKey
+    wrappedMasterKeyIv = $freshWrappedIv
+} | ConvertTo-Json
+$freshRegister = Invoke-Api -Method 'POST' -Path '/api/auth/register' -Json $freshRegisterBody
+Assert-Equal 'same email can register again' $freshRegister.Status 200
+
+$freshCrypto = Invoke-Api -Method 'GET' -Path "/api/auth/crypto?email=$email"
+$freshCryptoJson = $freshCrypto.Body | ConvertFrom-Json
+Assert-Equal 'new registration has a new salt' $freshCryptoJson.passwordSalt $freshSalt
+Assert-Equal 'new registration has a new wrapped key' $freshCryptoJson.wrappedMasterKey $freshWrappedKey
+$freshFiles = Invoke-Api -Method 'GET' -Path '/api/files'
+$freshFilesJson = @($freshFiles.Body | ConvertFrom-Json | ForEach-Object { $_ })
+Assert-Equal 'new account starts with an empty drive' $freshFilesJson.Count 0
+
+$freshDeleteBody = @{ currentAuthVerifier = $freshVerifier } | ConvertTo-Json
+$freshDelete = Invoke-Api -Method 'POST' -Path '/api/auth/account/delete' -Json $freshDeleteBody
+Assert-Equal 'fresh account deleted too' $freshDelete.Status 204
 
 Write-Host ""
 if ($script:Failures -eq 0) {
