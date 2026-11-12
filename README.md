@@ -105,7 +105,7 @@ flowchart TB
     end
 
     LAUNCHER["SkyVault.ps1 + mvnw<br/>build · run · test"]
-    TESTS["SkyVault-api-test.ps1<br/>SkyVault-loadtest.ps1"]
+    TESTS["tools\\SkyVault-api-test.ps1<br/>tools\\SkyVault-loadtest.ps1"]
 
     CRYPTO -- "ciphertext · hashes · wrapped key" --> TLS
     TLS --> TOMCAT
@@ -162,8 +162,9 @@ plaintext content. That is the Zero-Knowledge boundary; the sections below descr
 | `skyvault.config.json` | base server config: heap, processors, Tomcat, limits, data paths, DB, sessions, logs |
 | `skyvault.config.local.json` | optional machine-local overlay, gitignored; good place for real passwords |
 | `skyvault.config.schema.json` | JSON Schema used by editors for validation and completion |
-| `SkyVault-api-test.ps1` | end-to-end API test against a running server |
-| `SkyVault-loadtest.ps1` | parallel load test that verifies the 256 limit and HTTP 429 |
+| `tools/` | helper scripts; nothing here is needed to build or run the server |
+| `tools/SkyVault-api-test.ps1` | end-to-end API test against a running server |
+| `tools/SkyVault-loadtest.ps1` | parallel load test that verifies the 256 limit and HTTP 429 |
 | `Web/` | web module: the static interface, packaged as a JAR |
 | `Web/.../META-INF/resources/` | `index.html`, `style.css`, `app.js`, `crypto.js`, `vendor/` (libsodium) |
 | `Server/` | server module: Spring Boot application; depends on Web |
@@ -436,7 +437,7 @@ It is deterministic, so the server can search and detect conflicts without knowi
 The HMAC key is different for every user, so the same names cannot be correlated
 across accounts.
 
-Full flow test: `.\SkyVault-api-test.ps1` (the server must be running). The script accepts the
+Full flow test: `.\tools\SkyVault-api-test.ps1` (the server must be running). The script accepts the
 development certificate automatically.
 
 ## Interface (GUI)
@@ -532,7 +533,7 @@ The mechanism has two layers:
 Requests for static files and `/actuator/**` are **not** counted — thanks to that the site
 always loads, and monitoring works even under full load.
 
-Measured with `.\SkyVault-loadtest.ps1 -Requests 640 -DelayMs 3000`: 427 x `200`, 213 x `429`,
+Measured with `.\tools\SkyVault-loadtest.ps1 -Requests 640 -DelayMs 3000`: 427 x `200`, 213 x `429`,
 peak load 256.
 
 Relevant keys in `skyvault.config.json`:
@@ -705,8 +706,8 @@ sidecar contain the checksums needed to confirm that the restored dump and plan 
 A separate tool to check the 256 limit on a running server:
 
 ```powershell
-.\SkyVault-loadtest.ps1                            # 320 requests, default limit 256
-.\SkyVault-loadtest.ps1 -Requests 40 -DelayMs 3000 # quick verification of the 429 path
+.\tools\SkyVault-loadtest.ps1                            # 320 requests, default limit 256
+.\tools\SkyVault-loadtest.ps1 -Requests 40 -DelayMs 3000 # quick verification of the 429 path
 ```
 
 The script sends real parallel connections and counts `200` and `429` responses. It accepts the
